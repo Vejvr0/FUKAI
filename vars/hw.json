@@ -1,0 +1,27 @@
+{
+    "minimum_os": {
+        "Windows": {
+            "minimum": 19041,
+            "compare": "build",
+            "label": "Windows 10 verzia 2004"
+        },
+        "Darwin": {
+            "minimum": 12,
+            "compare": "major",
+            "label": "macOS 12 Monterey"
+        }
+    },
+    "minimum_cores": 8,
+    "minimum_ram_gb": 4,
+
+    "cuda_arch": {
+        "_comment": "Compute capability z nvidia-smi -> architektura a pripona wheelu v requirements-llama-win-cuda.txt. Pozri ALMANAC 3.1.",
+        "12.0": {"name": "Blackwell",     "wheel": "sm120"},
+        "10.0": {"name": "Blackwell",     "wheel": "sm100"},
+        "9.0":  {"name": "Hopper",        "wheel": "sm90"},
+        "8.9":  {"name": "Ada Lovelace",  "wheel": "sm89"},
+        "8.6":  {"name": "Ampere",        "wheel": "sm86"},
+        "8.0":  {"name": "Ampere",        "wheel": "sm80"},
+        "7.5":  {"name": "Turing",        "wheel": "sm75"}
+    }
+}

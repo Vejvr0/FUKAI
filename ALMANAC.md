@@ -7,7 +7,8 @@ Zdieľaná pamäť projektu pre Claude Code na všetkých strojoch (Mac aj PC). 
 - **FUKAI** = Fakultná Univerzálna Kognitívna AI. Univerzitný projekt (Žilinská univerzita), autor Lukáš Vavro.
 - Desktopová aplikácia na chat s lokálnymi LLM (štýl Ollama / LM Studio), crossplatform Windows + macOS.
 - Repo: https://github.com/Vejvr0/FUKAI (súkromné). Kód sa synchronizuje **iba cez Git**, nie cez OneDrive (ten je len na dokumenty/návrhy).
-- Logo: štvorcové 1:1, ilustrácia (postavička s ovečkou, digitálna špirála, hory, logo ŽU), nápis „FUKAI – chatbot ktorý to fúka“, zemité hnedo-zelené farby. Zatiaľ nie je v repe → patrí do `assets/` (+ `.ico` pre Windows, `.icns` pre Mac).
+- Logo: štvorcové 1:1, profesionálne logo v .png formáte. Zatiaľ nie je v repe → patrí do `assets/` (+ `.ico` pre Windows, `.icns` pre Mac).
+- SpashScreen: ilustrácia baču s ovečkou, kde je nápis FUKAI s popisom chat ktorý to fúka. Zatiaľ nie je v repe → patrí do `assets/` 
 
 ## 2. Funkcie (rozsah)
 
@@ -161,5 +162,16 @@ Jadro sa dá otestovať čistým konzolovým skriptom, takže je hotové a overe
 
 ## 9. Poznámky k prostrediu
 
-- Na PC 1 je shell **PowerShell**, Claude Code má aj Git Bash. Pozor: viacriadkové `heredoc` v Git Bash sa na slovenských úvodzovkách a apostrofoch rozbíja – dlhé súbory zapisovať priamo, nie cez `cat > file <<EOF`.
-- **`ALMANAC.md` je v commite `510c7a1` uložený ako prázdny súbor.** Obsah existoval iba v pracovnom strome, takže `git checkout -- ALMANAC.md` ho vymaže. Pred prácou s Gitom treba ALMANAC commitnúť, inak hrozí strata.
+Na PC 1 je shell **PowerShell 5.1**, Claude Code má aj Git Bash. Každé z nich má inú pascu:
+
+- **PowerShell 5.1 nepozná `&&`.** `git add . && git commit -m "x"` skončí na `ParserError`. Správne: `git add .; if ($?) { git commit -m "x" }`, alebo len `a; b`.
+- **Git Bash prerába argumenty začínajúce lomkou na windowsové cesty.** Z `git commit -m "/core - ..."` sa stane predmet `C:/Users/.../hermes/git/core - ...`. Commit správy nikdy nezačínať `/` – písať `core: ...`.
+- **Viacriadkové `heredoc` v Git Bash** sa na slovenských úvodzovkách a apostrofoch rozbíja – dlhé súbory zapisovať priamo, nie cez `cat > file <<EOF`.
+
+Git:
+
+- **Identita je nastavená iba lokálne v tomto repe** (`Lukáš Vavro <vavrolukas1911@gmail.com>`), nie globálne. Na MacBooku a PC 2 treba nastaviť vlastnú, inak `git commit` zlyhá na „Author identity unknown“. Globálne: `git config --global user.email "..."`.
+- Pozor na klamlivé **„Everything up-to-date“** pri `git push`: znamená len, že nie je žiadny nový *commit*. Keď commit zlyhá (napr. na chýbajúcej identite), súbory zostanú iba *staged* a push nemá čo poslať. Overovať cez `git log --oneline`, nie podľa výstupu pushu.
+- `.gitattributes` s `* text=auto eol=lf` drží jednotné konce riadkov. Bez neho Git na Windows hlási `LF will be replaced by CRLF` a súbory sa javia zmenené aj keď v nich nič nie je.
+- `.DS_Store` z macOS bol omylom v repe (commit `510c7a1`), od commitu `9ca7529` je odstránený zo sledovania a v `.gitignore`.
+- Commit `510c7a1` obsahoval `ALMANAC.md` ako **prázdny** súbor – obsah bol len v pracovnom strome. Od `9ca7529` je ALMANAC v Gite s obsahom. Poučenie: ALMANAC commitovať priebežne, inak ho `git checkout -- ALMANAC.md` vymaže.
