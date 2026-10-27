@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from functools import lru_cache
 import platform
 import psutil
-from core.constants import HW_CONF
+from core.constants import HW_CONF, RELATION_PROCESSOR_CORE, ERROR_INSUFFICIENT_BUFFER
 from core.errors import ConfigError, Notice
 
 
@@ -25,9 +25,18 @@ class HardwareProfile:
     os_version: int         # to iste ako cislo na porovnavanie, pozri _os_version()
     cores_physical: int     # skutočné jadrá
     cores_logical: int      # jadrá vrátane HyperThreadingu
+    cores_performance: int  # výkonné (P) jadrá; na nehybridnom CPU = cores_physical
     ram_total_mb: int       # celková RAM
     ram_available_mb: int   # koľko je jej práve voľnej
     gpu: GpuInfo | None     # None = nenašla sa použiteľná grafika
+
+    @property
+    def hybrid(self) -> bool:
+        return self.cores_performance < self.cores_physical
+
+    @property
+    def n_threads(self) -> int:
+        return max(1, self.cores_performance)
 
     @property
     def backend(self) -> str:
@@ -46,11 +55,78 @@ def _os_version() -> tuple[str, int]:
         return platform.release(), build
 
     if system == "Darwin":
-        verzia = platform.mac_ver()[0]
-        major = int(verzia.split(".")[0]) if verzia else 0
-        return verzia, major
+        version = platform.mac_ver()[0]
+        major = int(version.split(".")[0]) if version else 0
+        return version, major
 
     return platform.release(), 0
+
+
+def _performance_cores_windows() -> int | None:
+    import ctypes
+    from ctypes import wintypes
+
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    probe = kernel32.GetLogicalProcessorInformationEx
+    probe.argtypes = [ctypes.c_ulong, ctypes.c_void_p, ctypes.POINTER(wintypes.DWORD)]
+    probe.restype = wintypes.BOOL
+
+    size = wintypes.DWORD(0)
+    if not probe(RELATION_PROCESSOR_CORE, None, ctypes.byref(size)):
+        if ctypes.get_last_error() != ERROR_INSUFFICIENT_BUFFER:
+            return None
+    if size.value == 0:
+        return None
+
+    buffer = (ctypes.c_byte * size.value)()
+    if not probe(RELATION_PROCESSOR_CORE, ctypes.byref(buffer), ctypes.byref(size)):
+        return None
+
+    raw = bytes(buffer)
+    counts: dict[int, int] = {}
+    offset = 0
+    while offset + 10 <= len(raw):
+        record_size = int.from_bytes(raw[offset + 4:offset + 8], "little")
+        if record_size == 0:
+            break
+        trieda = raw[offset + 9]
+        counts[trieda] = counts.get(trieda, 0) + 1
+        offset += record_size
+
+    if len(counts) < 2:
+        return None
+    return counts[max(counts)]
+
+
+def _performance_cores_macos() -> int | None:
+    if platform.machine() != "arm64":
+        return None
+    try:
+        done = subprocess.run(
+            ["sysctl", "-n", "hw.perflevel0.physicalcpu"],
+            capture_output=True, text=True, timeout=5, check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    value = done.stdout.strip()
+    return int(value) if value.isdigit() else None
+
+
+def _performance_cores(cores_physical: int) -> int:
+    system = platform.system()
+    try:
+        if system == "Windows":
+            found = _performance_cores_windows()
+        elif system == "Darwin":
+            found = _performance_cores_macos()
+        else:
+            found = None
+    except Exception:
+        found = None
+
+    if found and 0 < found <= cores_physical:
+        return found
+    return cores_physical
 
 
 def _probe_nvidia() -> GpuInfo | None:
@@ -107,6 +183,12 @@ def detect_gpu() -> GpuInfo | None:
     return _probe_nvidia() or _probe_metal()
 
 
+def required_wheel(profil: HardwareProfile) -> str | None:
+    if profil.gpu is None or profil.gpu.backend != "cuda":
+        return None
+    return gpu_arch(profil.gpu.compute)[1]
+
+
 def gpu_arch(compute: str | None) -> tuple[str | None, str | None]:
     if compute is None:
         return None, None
@@ -122,13 +204,15 @@ def gpu_arch(compute: str | None) -> tuple[str | None, str | None]:
 def detect() -> HardwareProfile:
     ram = psutil.virtual_memory()
     release, os_version = _os_version()
+    cores_physical = psutil.cpu_count(logical=False)
     return HardwareProfile(
         gpu=detect_gpu(),
         system=platform.system(),
         release=release,
         os_version=os_version,
-        cores_physical=psutil.cpu_count(logical=False),
+        cores_physical=cores_physical,
         cores_logical=psutil.cpu_count(logical=True),
+        cores_performance=_performance_cores(cores_physical),
         ram_total_mb=ram.total // 1024 // 1024,
         ram_available_mb=ram.available // 1024 // 1024,
     )
@@ -223,17 +307,13 @@ def check_gpu(profil: HardwareProfile) -> Notice | None:
     if profil.gpu.backend != "cuda":
         return None
 
-    arch, wheel = gpu_arch(profil.gpu.compute)
-    if wheel is None:
+    if gpu_arch(profil.gpu.compute)[1] is None:
         return Notice.warning(
             f"Pre tvoju grafickú kartu nie je známy predkompilovaný wheel (compute capability {profil.gpu.compute}).",
             hint="Pozri requirements-llama-win-cuda.txt.",
         )
 
-    return Notice.info(
-        f"Grafika {profil.gpu.name} ({arch}) potrebuje wheel {wheel}.",
-        hint="Odkomentuj príslušný riadok v requirements-llama-win-cuda.txt.",
-    )
+    return None
 
 
 if __name__ == "__main__":
@@ -242,7 +322,8 @@ if __name__ == "__main__":
 
     profil = detect()
     print(f"Systém:     {profil.system} {profil.release}  (porovnáva sa {profil.os_version})")
-    print(f"Jadrá:      {profil.cores_physical} fyzických / {profil.cores_logical} logických")
+    print(f"Jadrá:      {profil.cores_physical} fyzických / {profil.cores_logical} logických"
+          + (f" / {profil.cores_performance} výkonných" if profil.hybrid else " (nehybridné)"))
     print(f"RAM:        {profil.ram_total_mb / 1024:.1f} GB celkom")
     print(f"RAM voľná:  {profil.ram_available_mb / 1024:.1f} GB")
 
@@ -257,6 +338,7 @@ if __name__ == "__main__":
         print("Grafika:    nenašla sa")
 
     print(f"\nBackend:      {profil.backend}")
+    print(f"n_threads:    {profil.n_threads}")
     print(f"n_gpu_layers: {profil.n_gpu_layers}")
 
     print("\nKontroly:")

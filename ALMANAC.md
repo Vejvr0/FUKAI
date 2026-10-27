@@ -46,6 +46,15 @@ Toto nahrádza pôvodnú otvorenú otázku o „spätnej kompatibilite CUDA 13.0
 | `...cuda13.0.sm86.ampere...` | sm_86 | RTX 30XX |
 | `...cuda13.0.sm75.turing...` | sm_75 | RTX 20XX, GTX 16XX |
 
+**Pozor na dve nezávislé čísla, ktoré sa ľahko zmiešajú:**
+
+| Číslo | Čo je to | PC 1 |
+|---|---|---|
+| **CUDA verzia** | verzia softvéru (ovládač, toolkit) | UMD 13.4, toolkit 13.0 |
+| **Compute capability** | generácia čipu, teda hardvér | 12.0 = `sm_120` = Blackwell |
+
+Compute capability je vlastnosť kremíka a aktualizáciou ovládača sa **nikdy nezmení**. Wheel sa vyberá podľa nej, nie podľa verzie CUDA – musí byť skompilovaný pre danú `sm_`, inak sa karta nepoužije ani s najnovším toolkitom. `nvidia-smi --query-gpu=compute_cap` ju vráti priamo (`12.0`), takže sa dá použiť ako kľúč do tabuľky bez parsovania.
+
 - Všetky sú `py3-none-win_amd64`, teda **nezávislé od verzie Pythonu** (3.10–3.13). Dôvod: llama-cpp-python volá `llama.dll` cez `ctypes`, nie je to C extension. Pri prechode na inú verziu Pythonu sa wheel meniť nemusí.
 - Dôsledok pre PC 2 (RTX 4080): netreba nič testovať, stačí odkomentovať `sm89` riadok.
 - Wheel má cca 300 MB.
@@ -55,15 +64,21 @@ Toto nahrádza pôvodnú otvorenú otázku o „spätnej kompatibilite CUDA 13.0
 
 | Stroj | CPU | GPU / VRAM | RAM | Backend |
 |---|---|---|---|---|
-| MacBook | Apple M2 | integrovaná, zdieľaná pamäť | **8 GB unified** | Metal |
+| MacBook | Apple M2 (4P + 4E) | integrovaná, zdieľaná pamäť | **8 GB unified** | Metal – `core/hardware.py` *overené 2026-10-28* |
 | PC 1 | Intel Core Ultra 7 265K (8P + 12E, bez HT) | RTX 5060 Ti **16 GB** (Blackwell, sm_120) | 32 GB | CUDA Toolkit 13.0, driver 617.42 – *overené 2026-10-27* |
 | PC 2 | – | RTX 4080 16 GB (Ada, sm_89) | – | CUDA, wheel `sm89` (pozri §3.1) |
 
 Dôsledky pre návrh:
 
-- **Mac 8 GB je najslabší článok.** macOS si berie ~3 GB, prakticky ~4–5 GB pre model + KV cache → modely do ~3–4B (Q4), 7–8B Q4 len na hrane s malým `n_ctx`. Aplikácia musí pred načítaním odhadnúť pamäť (veľkosť súboru + KV cache) a varovať.
+- **Mac 8 GB je najslabší článok.** macOS si berie ~3 GB, prakticky ~4–5 GB pre model + KV cache → modely do ~3–4B (Q4), 7–8B Q4 len na hrane s malým `n_ctx`. Aplikácia musí pred načítaním odhadnúť pamäť a varovať.
+- **Rozhodnuté 2026-10-28: samostatný „rozpočet pamäte“ v `hardware.py` sa nerobí.** Stačí `ram_available_mb` z profilu a orientačné porovnanie s veľkosťou `.gguf` priamo v `llm_engine`, s `Notice` pri nedostatku. Na Macu je `ram_available_mb` aj tak jediné správne číslo, lebo GPU berie z tej istej pamäte. **Pozor:** `ram_available_mb` (aj `gpu.vram_free_mb`) sa merajú raz pri `detect()`, takže pred načítaním modelu si `llm_engine` musí spraviť **nové** meranie – hodnota z času štartu appky je už neplatná.
 - Pri každom PC overiť, že `n_gpu_layers=-1` reálne beží na GPU (log llama.cpp / `nvidia-smi`).
-- **265K má P- a E-jadrá.** Predvolené `n_threads` ≈ počet P-jadier (8), nie všetkých 20 – E-jadrá generovanie spomaľujú. Hodnota musí byť nastaviteľná.
+- **Oba stroje majú P- a E-jadrá, takže `cores_physical` je na `n_threads` zlá hodnota na oboch.** 265K: `psutil` vráti 20, správne je 8. M2: vráti 8, správne sú 4. `psutil` P a E nerozlíši (na 265K nie je ani HyperThreading, takže fyzické = logické = 20).
+  Vyriešené v `core/hardware.py` ako `_performance_cores()`, hodnota je v profile ako `cores_performance` a vystupuje ako `n_threads`:
+  - **Windows** – `GetLogicalProcessorInformationEx` cez `ctypes`, počítajú sa jadrá s najvyšším `EfficiencyClass`. *Overené na PC 1 (2026-10-28): `{trieda 1: 8 jadier, trieda 0: 12}` → 8 P-jadier.* Pozor: P a E jadrá sú v zozname **premiešané** (jadro 0,1 = P, jadro 2 = E), takže „vezmi prvých N“ nefunguje. Záznamy majú premenlivú dĺžku, treba ju čítať z každého záznamu zvlášť.
+  - **macOS** – `sysctl -n hw.perflevel0.physicalcpu`. *Zatiaľ neoverené na reálnom Macu.*
+  - **Inde / pri zlyhaní sondy** – fallback na `cores_physical`, appka beží ďalej s menej optimálnou hodnotou.
+  - Hodnota musí zostať v UI nastaviteľná.
 
 ### 4.1 Testovacie modely
 
@@ -141,8 +156,10 @@ Plochá štruktúra (nie `src/fukai/`) – je to aplikácia, nie knižnica, a je
 
 ## 8. Poradie práce a stav
 
-0. [x] `requirements.txt`, `requirements-llama-win-cuda.txt`, `requirements-llama-mac.txt` hotové (2026-10-27). **`.venv` je ale ešte prázdny – obsahuje iba pip.** Inštalácia čaká na rozhodnutie používateľa. (PyQt6 6.11.0 je na PC 1 nainštalované len globálne v Pythone 3.14, nie v projektovom venv – to je Python 3.12.10.)
-1. [ ] Jadro bez UI: `core/settings.py` (dataclasses) → `core/hardware.py` → `core/llm_engine.py`, otestované v konzole (load `.gguf`, streaming, stop, overenie GPU offloadu) ← **ďalší krok**
+0. [x] `requirements.txt`, `requirements-llama-win-cuda.txt`, `requirements-llama-mac.txt` hotové (2026-10-27). V `.venv` je zatiaľ **iba `psutil`** – PyQt6 ani llama-cpp-python sa ešte neinštalovali.
+1. [x] `core/errors.py` – hierarchia chýb delená **podľa príčiny**, nie podľa modulu. Každá chyba nesie tri oddelené texty: `message` (veta pre používateľa), `hint` (čo s tým), `detail` (technický text do logu). Plus `Notice` + `Severity` na **nefatálne** oznámenia. Vďaka tomu UI vykresľuje chyby aj varovania rovnako. `hint` je keyword-only, aby sa tie tri texty nedali zameniť.
+2. [x] `core/hardware.py` – detekcia a 4 kontroly (`check_os`, `check_cores`, `check_ram`, `check_gpu`). Overené na PC 1 aj MacBooku. Dáva tri veci, pre ktoré modul existuje: `n_threads` (= `cores_performance`), `n_gpu_layers` (−1/0 podľa backendu) a `backend` (`cuda`/`metal`/`cpu`). **Zásada: detekcia nikdy nevyhodí výnimku von** – zlyhanie sondy sa mení na `Notice` a appka beží na CPU. `required_wheel()` je zvlášť, mimo `check_gpu` – nie je to problém, ale fakt, a hlásiť ho treba až keď llama-cpp-python chýba. Pevné údaje (minimálne verzie OS, mapa compute capability → wheel) sú vo `vars/hw.json`, konštanty v `core/constants.py`.
+3. [ ] `core/settings.py` (LoadParams / SamplingParams) → `core/llm_engine.py`, otestované v konzole (load `.gguf`, streaming, stop, overenie GPU offloadu) ← **ďalší krok**. Vyžaduje doinštalovať llama-cpp-python (wheel ~300 MB).
 2. [ ] Minimálne UI: okno, vstup, streamovaná odpoveď cez worker
 3. [ ] SQLite + sidebar s chatmi
 4. [ ] Panel nastavení per chat + výber modelu
