@@ -1,0 +1,28 @@
+# FUKAI – spoločné závislosti (Windows + macOS)
+# Python 3.12.10, inštalovať do .venv v koreni projektu.
+
+# --- UI ---
+PyQt6==6.11.0
+
+# --- Hardvér / systém ---
+psutil==7.2.2
+platformdirs==4.9.6
+nvidia-ml-py==13.580.82 ; sys_platform == "win32"
+
+# --- Render odpovedí ---
+Pygments==2.20.0
+
+# --- Prílohy (krok 5) ---
+pypdf==6.1.3
+openpyxl==3.1.5
+python-docx==1.2.0
+
+# --- Web rozšírenie (krok 6) ---
+ddgs==9.7.1
+requests==2.32.5
+trafilatura==2.0.0
+
+# --- LLM jadro ---
+# llama-cpp-python 0.3.20 NIE je v requirements.txt zámerne:
+# wheel je platformovo a GPU-architektúrne špecifický, inštaluje sa zvlášť.
+# Pozri requirements-llama-*.txt a ALMANAC.md §3.

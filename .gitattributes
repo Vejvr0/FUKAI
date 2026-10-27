@@ -1,0 +1,13 @@
+# Jednotné konce riadkov pre synchronizáciu Mac <-> PC.
+# Bez tohto Git na Windows prepisuje LF na CRLF a každý súbor sa javí
+# ako zmenený aj keď v ňom nič nie je.
+* text=auto eol=lf
+
+# Binárne súbory nechaj na pokoji.
+*.gguf binary
+*.png binary
+*.ico binary
+*.icns binary
+*.xlsx binary
+*.docx binary
+*.pdf binary

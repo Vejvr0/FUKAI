@@ -1,0 +1,17 @@
+# llama-cpp-python 0.3.20, Windows + CUDA 13.0
+# Predkompilované wheels: https://github.com/dougeeai/llama-cpp-python-wheels (tretia strana)
+# Vyžaduje nainštalovaný CUDA Toolkit 13.0 (inak chýba cublas64_13.dll).
+#
+# ODKOMENTUJ riadok podľa architektúry svojej GPU:
+#
+#   Blackwell  (sm_100/sm_120) – RTX 50XX
+llama_cpp_python @ https://github.com/dougeeai/llama-cpp-python-wheels/releases/download/v0.3.20-cuda13.0-sm100-sm120/llama_cpp_python-0.3.20%2Bcuda13.0.sm100.sm120.blackwell-py3-none-win_amd64.whl
+#
+#   Ada Lovelace (sm_89) – RTX 40XX
+# llama_cpp_python @ https://github.com/dougeeai/llama-cpp-python-wheels/releases/download/v0.3.20-cuda13.0-sm89/llama_cpp_python-0.3.20%2Bcuda13.0.sm89.ada-py3-none-win_amd64.whl
+#
+#   Ampere (sm_86) – RTX 30XX
+# llama_cpp_python @ https://github.com/dougeeai/llama-cpp-python-wheels/releases/download/v0.3.20-cuda13.0-sm86/llama_cpp_python-0.3.20%2Bcuda13.0.sm86.ampere-py3-none-win_amd64.whl
+#
+#   Turing (sm_75) – RTX 20XX / GTX 16XX
+# llama_cpp_python @ https://github.com/dougeeai/llama-cpp-python-wheels/releases/download/v0.3.20-cuda13.0-sm75/llama_cpp_python-0.3.20%2Bcuda13.0.sm75.turing-py3-none-win_amd64.whl

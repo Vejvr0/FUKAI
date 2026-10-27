@@ -1,0 +1,6 @@
+# llama-cpp-python 0.3.20, macOS Apple Silicon (Metal)
+# Build zo zdrojov – vyžaduje Xcode Command Line Tools a cmake.
+#
+#   CMAKE_ARGS="-DGGML_METAL=on" pip install --no-cache-dir -r requirements-llama-mac.txt
+#
+llama-cpp-python==0.3.20
