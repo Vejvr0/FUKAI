@@ -1,4 +1,4 @@
-# FUKAI
+# FUKAI
 
 Toto je <i>Fakultná Univerzálna Kognitívna AI</i> [<b>FUKAI</b>] desktop aplikácia, ktorá ti pomôže pri každodenných dotazoch, práci so súbormi, s domácimi úlohami a rôznymi inými problémami lokálne u teba na počítači.
 
@@ -14,7 +14,7 @@ Aplikácia je crossplatform pre <b>Windows</b> a <b>MAC OS</b>. Samotná apliká
 <li><b>RAM</b>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;8GB a viac</li>
 <li><b>Python:</b>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;3.12.10</li>
 <li><b>PyQt6:</b>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;6.11.0</li>
-<li><b>llama-cpp-python:</b>&nbsp;&nbsp;&nbsp;0.3.20</li>
+<li><b>llama-cpp-python:</b>&nbsp;&nbsp;&nbsp;0.3.36</li>
 </ul>
 
 <i>* Toto sú len odhadované minimálne nároky pre samotnú aplikáciu, pri používaní väčších modelov môžu nároky pre fungovanie aplikácie rásť.</i>

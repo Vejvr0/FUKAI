@@ -1,6 +1,18 @@
-# llama-cpp-python 0.3.20, macOS Apple Silicon (Metal)
-# Build zo zdrojov – vyžaduje Xcode Command Line Tools a cmake.
+# llama-cpp-python 0.3.36, macOS Apple Silicon (Metal)
 #
-#   CMAKE_ARGS="-DGGML_METAL=on" pip install --no-cache-dir -r requirements-llama-mac.txt
+# Oficiálny predkompilovaný wheel od autora knižnice.
+# Index: https://abetlen.github.io/llama-cpp-python/whl/metal
 #
-llama-cpp-python==0.3.20
+#   python -m pip install -r requirements-llama-mac.txt
+#
+# Build zo zdrojákov už NIE JE potrebný – netreba teda ani Xcode Command Line
+# Tools ani cmake. Wheel je pre macosx_11_0_arm64, teda macOS 11+ na Apple
+# Silicon (minimum projektu je macOS 12, pozri vars/hw.json).
+
+llama_cpp_python @ https://github.com/abetlen/llama-cpp-python/releases/download/v0.3.36-metal/llama_cpp_python-0.3.36-py3-none-macosx_11_0_arm64.whl
+
+# --- Intel Mac --------------------------------------------------------------
+# Metal wheel je iba pre arm64. Na Intel Macu treba CPU variantu
+# (a skontrolovať, či vôbec existuje wheel pre x86_64 macOS):
+#
+# llama_cpp_python @ https://github.com/abetlen/llama-cpp-python/releases/download/v0.3.36/llama_cpp_python-0.3.36-py3-none-macosx_11_0_arm64.whl

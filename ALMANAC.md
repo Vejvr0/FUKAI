@@ -1,6 +1,6 @@
 # FUKAI – Almanac
 
-Zdieľaná pamäť projektu pre Claude Code na všetkých strojoch (Mac aj PC). Sem patria rozhodnutia, obmedzenia a kontext, ktorý sa nedá vyčítať z kódu. Pri zmene rozhodnutia prepíš príslušnú sekciu, nepridávaj protichodné záznamy. Posledná revízia: 2026-10-27.
+Zdieľaná pamäť projektu pre Claude Code na všetkých strojoch (Mac aj PC). Sem patria rozhodnutia, obmedzenia a kontext, ktorý sa nedá vyčítať z kódu. Pri zmene rozhodnutia prepíš príslušnú sekciu, nepridávaj protichodné záznamy. Posledná revízia: 2026-10-28.
 
 ## 1. Projekt
 
@@ -8,7 +8,7 @@ Zdieľaná pamäť projektu pre Claude Code na všetkých strojoch (Mac aj PC). 
 - Desktopová aplikácia na chat s lokálnymi LLM (štýl Ollama / LM Studio), crossplatform Windows + macOS.
 - Repo: https://github.com/Vejvr0/FUKAI (súkromné). Kód sa synchronizuje **iba cez Git**, nie cez OneDrive (ten je len na dokumenty/návrhy).
 - Logo: štvorcové 1:1, profesionálne logo v .png formáte. Zatiaľ nie je v repe → patrí do `assets/` (+ `.ico` pre Windows, `.icns` pre Mac).
-- SpashScreen: ilustrácia baču s ovečkou, kde je nápis FUKAI s popisom chat ktorý to fúka. Zatiaľ nie je v repe → patrí do `assets/` 
+- SpashScreen: ilustrácia baču s ovečkou, kde je nápis FUKAI s popisom chat ktorý to fúka. áno prechádzame na Zatiaľ nie je v repe → patrí do `assets/` 
 
 ## 2. Funkcie (rozsah)
 
@@ -24,20 +24,38 @@ Zdieľaná pamäť projektu pre Claude Code na všetkých strojoch (Mac aj PC). 
 |---|---|---|
 | Python | 3.12.10 | `.venv` v koreni projektu, v `.gitignore`, na každom OS vlastné |
 | PyQt6 | 6.11.0 | licencia GPL v3 – pre univerzitný projekt OK |
-| llama-cpp-python | 0.3.20 | rovnaká verzia na oboch OS |
+| llama-cpp-python | **0.3.36** | rovnaká verzia na oboch OS. Zmenené 2026-10-28 z 0.3.20 – dôvody v §10.1 |
 
 Závislosti sú pinované v **troch** súboroch – `llama-cpp-python` je zámerne mimo hlavného, lebo jediný je platformovo aj GPU-architektúrne špecifický:
 
 - `requirements.txt` – spoločné pre oba OS (PyQt6, psutil, platformdirs, nvidia-ml-py, Pygments + závislosti pre prílohy a web, ktoré prídu v krokoch 5–6).
-- `requirements-llama-win-cuda.txt` – Windows CUDA wheel. Obsahuje URL pre všetky 4 GPU architektúry, odkomentuje sa jeden riadok podľa karty.
-- `requirements-llama-mac.txt` – macOS, build zo zdrojov cez `CMAKE_ARGS="-DGGML_METAL=on" pip install --no-cache-dir -r requirements-llama-mac.txt` (treba Xcode Command Line Tools a cmake).
+- `requirements-llama-win-cuda.txt` – Windows CUDA wheel, **jeden pre všetky NVIDIA karty**.
+- `requirements-llama-mac.txt` – macOS Apple Silicon, Metal wheel.
 
-- **Windows/CUDA:** PyPI nemá CUDA build. Používame predkompilované wheels z `dougeeai/llama-cpp-python-wheels` (neoficiálny zdroj, tretia strana). Vyžadujú nainštalovaný CUDA Toolkit, inak chýba `cublas64_13.dll`.
-- **macOS:** Metal build llama-cpp-python (Apple Silicon).
+**Od 2026-10-28 berieme wheels z oficiálnych indexov autora knižnice (`abetlen`), nie od tretej strany.** PyPI samo CUDA ani Metal build nemá, ale autor ich hostuje zvlášť:
+
+| Varianta | Index | Wheel |
+|---|---|---|
+| Windows CUDA 13.0 | `.../whl/cu130` | `v0.3.36-cu130/...win_amd64.whl` (218 MB) |
+| Windows CPU | `.../whl/cpu` | `v0.3.36/...win_amd64.whl` |
+| macOS Metal (arm64) | `.../whl/metal` | `v0.3.36-metal/...macosx_11_0_arm64.whl` |
+
+Základ URL: `https://abetlen.github.io/llama-cpp-python/whl/<varianta>`.
+
+Dôsledky oproti pôvodnému stavu:
+
+- **Padá matica 4 architektúr** zo §3.1 – oficiálny CUDA wheel nemá `sm` v názve a je jeden pre RTX 20xx–50xx. Tabuľka compute capability v §3.1 a vo `vars/hw.json` zostáva užitočná na diagnostiku a hlásenia, ale wheel sa už podľa nej nevyberá.
+- **Na macOS netreba build zo zdrojákov** – teda ani Xcode Command Line Tools, ani cmake.
+- **CPU a CUDA sú na tej istej verzii** (0.3.36), čo pôvodný pin 0.3.20 neumožňoval.
+- Pri prechode treba **preinštalovať aj MacBook** na 0.3.36, aby vetvy nebežali na rôznych llama.cpp.
+
+**Neoverené:** či CUDA wheel obsahuje `sm_120` (Blackwell, PC 1) a či stále vyžaduje nainštalovaný CUDA Toolkit (`cublas64_13.dll`), alebo nesie cuBLAS v sebe. Zistí sa pri prvej inštalácii.
 
 ### 3.1 CUDA wheels – ako to naozaj funguje (overené 2026-10-27)
 
-Toto nahrádza pôvodnú otvorenú otázku o „spätnej kompatibilite CUDA 13.0 → 12.8“. Spätná kompatibilita **sa vôbec nerieši** – wheels sú vydávané **zvlášť pre každú GPU architektúru**. Pre `0.3.20 + CUDA 13.0 + win_amd64` existujú:
+> **Platnosť:** táto sekcia opisuje wheels od `dougeeai`, ktoré sme používali do 2026-10-28. Od prechodu na oficiálne wheels 0.3.36 (§10.1) sa **wheel podľa architektúry nevyberá** – oficiálny je jeden pre všetky NVIDIA karty. Tabuľka compute capability nižšie zostáva užitočná na **diagnostiku a hlásenia** používateľovi (`core/hardware.py`, `vars/hw.json`), nie na výber balíka.
+
+Pôvodná otvorená otázka bola o „spätnej kompatibilite CUDA 13.0 → 12.8“. Tá sa **vôbec nerieši** – wheels od tretej strany boli vydávané **zvlášť pre každú GPU architektúru**. Pre `0.3.20 + CUDA 13.0 + win_amd64` existovali:
 
 | Wheel | Architektúra | Karty |
 |---|---|---|
@@ -152,14 +170,16 @@ Plochá štruktúra (nie `src/fukai/`) – je to aplikácia, nie knižnica, a je
 - **Súbory:** `pypdf` (MIT; PyMuPDF je rýchlejší, ale AGPL), `openpyxl`/`pandas` → markdown tabuľka, `python-docx`. OCR mimo rozsahu.
 - **Úložisko:** SQLite cez `platformdirs` – tabuľky `chats`, `messages`, `chat_settings`, `attachments`.
 - **Render odpovedí:** `QTextBrowser.setMarkdown()` + `pygments` na kód. Bez QWebEngine (veľký build).
-- **Distribúcia:** PyInstaller, zvlášť build pre Windows a Mac.
+- **Distribúcia:** PyInstaller, zvlášť build pre Windows a Mac. Na Windows potom Inno Setup, na Macu `.dmg`/`.pkg`. Podrobnosti a nevyriešené body v §10.
 
 ## 8. Poradie práce a stav
 
 0. [x] `requirements.txt`, `requirements-llama-win-cuda.txt`, `requirements-llama-mac.txt` hotové (2026-10-27). V `.venv` je zatiaľ **iba `psutil`** – PyQt6 ani llama-cpp-python sa ešte neinštalovali.
 1. [x] `core/errors.py` – hierarchia chýb delená **podľa príčiny**, nie podľa modulu. Každá chyba nesie tri oddelené texty: `message` (veta pre používateľa), `hint` (čo s tým), `detail` (technický text do logu). Plus `Notice` + `Severity` na **nefatálne** oznámenia. Vďaka tomu UI vykresľuje chyby aj varovania rovnako. `hint` je keyword-only, aby sa tie tri texty nedali zameniť.
 2. [x] `core/hardware.py` – detekcia a 4 kontroly (`check_os`, `check_cores`, `check_ram`, `check_gpu`). Overené na PC 1 aj MacBooku. Dáva tri veci, pre ktoré modul existuje: `n_threads` (= `cores_performance`), `n_gpu_layers` (−1/0 podľa backendu) a `backend` (`cuda`/`metal`/`cpu`). **Zásada: detekcia nikdy nevyhodí výnimku von** – zlyhanie sondy sa mení na `Notice` a appka beží na CPU. `required_wheel()` je zvlášť, mimo `check_gpu` – nie je to problém, ale fakt, a hlásiť ho treba až keď llama-cpp-python chýba. Pevné údaje (minimálne verzie OS, mapa compute capability → wheel) sú vo `vars/hw.json`, konštanty v `core/constants.py`.
-3. [ ] `core/settings.py` (LoadParams / SamplingParams) → `core/llm_engine.py`, otestované v konzole (load `.gguf`, streaming, stop, overenie GPU offloadu) ← **ďalší krok**. Vyžaduje doinštalovať llama-cpp-python (wheel ~300 MB).
+3. [ ] `core/settings.py` (LoadParams / SamplingParams) → `core/llm_engine.py`, otestované v konzole (load `.gguf`, streaming, stop) ← **ďalší krok**.
+   Pred tým: nainštalovať llama-cpp-python 0.3.36 (`pip install -r requirements-llama-win-cuda.txt`, 218 MB) a na MacBooku `requirements-llama-mac.txt`.
+   Prvý test má odpovedať na dve neoverené veci: či CUDA wheel podporuje `sm_120` (Blackwell) a či potrebuje CUDA Toolkit. Postup: načítať `gemma-3-4b-it-Q4_K_M.gguf` s `n_gpu_layers=-1` a v `nvidia-smi` overiť, že model naozaj sedí vo VRAM, nie v RAM.
 2. [ ] Minimálne UI: okno, vstup, streamovaná odpoveď cez worker
 3. [ ] SQLite + sidebar s chatmi
 4. [ ] Panel nastavení per chat + výber modelu
@@ -192,3 +212,82 @@ Git:
 - `.gitattributes` s `* text=auto eol=lf` drží jednotné konce riadkov. Bez neho Git na Windows hlási `LF will be replaced by CRLF` a súbory sa javia zmenené aj keď v nich nič nie je.
 - `.DS_Store` z macOS bol omylom v repe (commit `510c7a1`), od commitu `9ca7529` je odstránený zo sledovania a v `.gitignore`.
 - Commit `510c7a1` obsahoval `ALMANAC.md` ako **prázdny** súbor – obsah bol len v pracovnom strome. Od `9ca7529` je ALMANAC v Gite s obsahom. Poučenie: ALMANAC commitovať priebežne, inak ho `git checkout -- ALMANAC.md` vymaže.
+
+## 10. Distribúcia – zistené fakty a otvorené body
+
+Rieši sa až v kroku 7, ale nasledujúce čísla sú overené (2026-10-28) a ovplyvňujú rozhodnutia, ktoré sa robia skôr.
+
+**Windows:** PyInstaller `--onedir` (nie `--onefile` – ten pri každom spustení rozbaľuje obsah do temp, čo je pri ~300 MB DLL neúnosné), potom Inno Setup zabalí ten adresár do `setup.exe`.
+
+**Do zabalenej PyInstaller appky sa nedá doinštalovať wheel pipom.** Nie je tam pip ani `site-packages`. „Dynamická inštalácia správneho wheelu“ sa teda musí riešiť stiahnutím samotných DLL, nie pipom. Funkcia `required_wheel()` v `core/hardware.py` na to už existuje – vracia napr. `sm120`.
+
+**Veľkosť je hlavný problém, a nie je to Python kód:**
+
+| Súbor | Veľkosť |
+|---|---|
+| `cublas64_13.dll` | 49 MB |
+| `cublasLt64_13.dll` | **458 MB** |
+| CUDA wheel llama-cpp-python | ~300 MB |
+
+CUDA wheel **nemá cuBLAS v sebe** – vyžaduje nainštalovaný CUDA Toolkit (§3). Koncový používateľ ho mať nebude, takže ~507 MB CUDA knižníc treba priložiť k appke. NVIDIA redistribúciu týchto DLL povoľuje (CUDA EULA), ale overiť podmienky pred vydaním.
+
+**Verzie CPU a CUDA wheelov sa neprekrývajú:**
+
+| Zdroj | Rozsah |
+|---|---|
+| CUDA wheels, `dougeeai` | po **0.3.20** |
+| CPU wheels, oficiálny index `abetlen.github.io/llama-cpp-python/whl/cpu` | od **0.3.21** |
+
+Pôvodný pin `0.3.20` **nemal oficiálny CPU wheel pre Windows**, takže variant „appka beží na CPU a GPU podporu si dotiahne“ by vyžadoval dve rôzne verzie llama.cpp. **Vyriešené prechodom na 0.3.36** (§10.1) – tam sú CPU aj CUDA v tej istej verzii.
+
+### 10.1 Oficiálne wheels – ROZHODNUTÉ 2026-10-28, prechod na 0.3.36
+
+Autor knižnice (`abetlen`) hostuje vlastné indexy, nie len PyPI. Overené HTTP dotazom:
+
+| Index | URL | Verzie `win_amd64` |
+|---|---|---|
+| CPU | `https://abetlen.github.io/llama-cpp-python/whl/cpu` | 0.3.21 – 0.3.36 |
+| CUDA 13.0 | `https://abetlen.github.io/llama-cpp-python/whl/cu130` | 0.3.27 – 0.3.36 |
+| CUDA 12.1–12.5 | `.../whl/cu121` … `cu125` | staršie |
+| Metal (macOS arm64) | `https://abetlen.github.io/llama-cpp-python/whl/metal` | 0.3.31 – 0.3.36 |
+
+Existujú `cu121`–`cu125` a `cu130`; `cu126`, `cu128`, `cu129` neexistujú.
+
+**Prečo je to lepšie než `dougeeai`:**
+
+1. Oficiálny zdroj namiesto tretej strany.
+2. **CPU a CUDA sa prekrývajú na 0.3.27 – 0.3.36**, takže obe vetvy môžu bežať na tej istej verzii llama.cpp.
+3. Názov súboru je `llama_cpp_python-0.3.36-py3-none-win_amd64.whl` – **bez `sm` prípony**, čiže to zrejme nie je per-architektúra a padá celá matica 4 wheelov zo §3.1.
+4. Menší: 218 MB oproti ~300 MB.
+5. **Existuje aj Metal index**, takže na macOS padá build zo zdrojákov – netreba Xcode Command Line Tools ani cmake.
+
+**Neoverené, zistí sa pri inštalácii:** či wheel obsahuje `sm_120` (Blackwell, PC 1) a či má v sebe cuBLAS, alebo stále vyžaduje CUDA Toolkit. Podpísané GitHub odkazy nepustia HTTP Range, takže zoznam súborov vo wheeli sa bez stiahnutia celých 218 MB zistiť nedá.
+
+**Rozhodnuté:** pin v §3 posunutý z `0.3.20` na `0.3.36`, `requirements-llama-*.txt` prepísané na oficiálne URL. Zdroj `dougeeai` sa už nepoužíva.
+
+### 10.1b Build zo zdrojákov – čo to je a čo nie je
+
+`CMAKE_ARGS="-DGGML_CUDA=on" pip install llama-cpp-python==0.3.36` **nie je inštalácia, ale kompilácia**. Treba rozlišovať dva nezávislé problémy, ktoré sa pri tom často mieša:
+
+| | problém | čo ho rieši |
+|---|---|---|
+| A | rozbehať to na PC 1, PC 2, Macu | predkompilovaný wheel **alebo** build zo zdrojákov |
+| B | doručiť appku používateľovi | **len** hotové binárky, nikdy build na stroji používateľa |
+
+- Každý `CMAKE_ARGS` variant (`GGML_CUDA`, `GGML_METAL`, `GGML_HIP`, `GGML_VULKAN`) je **samostatný build a samostatný wheel**. CUDA a HIP sa v jednom builde vylučujú – „podpora pre všetky GPU“ znamená „vyber si jeden“, nie „jeden pokryje všetko“.
+- **Viac NVIDIA architektúr v jednom builde sa ale dá:** `-DGGML_CUDA=on -DCMAKE_CUDA_ARCHITECTURES=75;86;89;120` dá **jeden wheel pre RTX 20xx až 50xx**. Výstupom buildu je `.whl`, teda priamo tá binárka, ktorú priložíš k inštalačke – build zo zdrojákov je teda spôsob, ako si distribučnú binárku vyrobiť, a zároveň odstráni závislosť na cudzom repe.
+- **V PowerShelli nefunguje bashová syntax** `CMAKE_ARGS="..." pip install ...`. Musí byť `$env:CMAKE_ARGS = "-DGGML_CUDA=on"` na samostatnom riadku (pozri §9).
+- **Nástroje na PC 1 sú k dispozícii** (overené 2026-10-28): MSVC 14.44.35207 z VS 2022 BuildTools, CMake priložený k BuildTools, nvcc 13.0.88. `cl.exe` ani `cmake` **nie sú v PATH** – build spúšťať z „x64 Native Tools Command Prompt for VS 2022“. Na macOS bude treba Xcode Command Line Tools a cmake.
+- AMD cez `GGML_HIP` na Windows je problematické (ROCm má na Windows obmedzenú podporu); praktickejší by bol `GGML_VULKAN`. **Mimo rozsah projektu** – §1 fixuje NVIDIA + Apple Silicon.
+
+### 10.2 Pozor na „CUDA build s CPU fallbackom“
+
+CUDA zostavenie `llama.dll` je nalinkované na ovládač NVIDIA (`nvcuda.dll`). Na stroji bez NVIDIA karty sa knižnica nemusí vôbec načítať – takže nie je na čo spadnúť a `n_gpu_layers=0` to nezachráni. Pre Windows preto treba počítať s **dvoma buildmi** (CUDA + CPU), nie s jedným prepínačom.
+
+**Varianty inštalačky – nerozhodnuté:**
+
+1. Štyri inštalačky podľa architektúry GPU. Funguje offline, ale používateľ musí vedieť, akú má kartu.
+2. Inno Setup v `[Run]` sekcii stiahne správny balík. Malá inštalačka, potrebuje internet pri inštalácii.
+3. CPU základ + voliteľné dotiahnutie GPU akcelerácie pri prvom spustení. Najpríjemnejšie pre používateľa, ale blokuje to nesúlad verzií (vyššie).
+
+**macOS je jednoduchší** – Metal build je jeden pre všetky Apple Silicon, žiadna matica architektúr ani cuBLAS.
