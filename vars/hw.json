@@ -13,9 +13,7 @@
     },
     "minimum_cores": 8,
     "minimum_ram_gb": 4,
-
     "cuda_arch": {
-        "_comment": "Compute capability z nvidia-smi -> architektura a pripona wheelu v requirements-llama-win-cuda.txt. Pozri ALMANAC 3.1.",
         "12.0": {"name": "Blackwell",     "wheel": "sm120"},
         "10.0": {"name": "Blackwell",     "wheel": "sm100"},
         "9.0":  {"name": "Hopper",        "wheel": "sm90"},

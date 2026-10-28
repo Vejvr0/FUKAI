@@ -66,3 +66,135 @@ Pri tom zhavarovala jedna vec: `git checkout -- ALMANAC.md` ALMANAC **vymazal**,
 4. **`core/llm_engine.py`** – trieda (má stav: načítaný model), streaming ako generátor, Stop ako `threading.Event`. **Bez importu PyQt6** – QThread príde až v `ui/workers.py`, aby sa engine dal testovať konzolou bez `QApplication`.
 5. **Variant inštalačky** – nerozhodnuté, tri možnosti v ALMANAC §10.
 6. Drobnosť: konštanty `_RELATION_PROCESSOR_CORE` a `_ERROR_INSUFFICIENT_BUFFER` majú podtržník, ale importujú sa medzi modulmi – podtržník znamená „privátne“, takže klame.
+
+---
+
+## 2026-10-28 – CUDA wheel rozbehaný, settings + llm_engine
+
+**Stav na začiatku:** `llama-cpp-python` 0.3.36 nainštalovaný buildom zo zdrojákov, ale **model bežal na CPU**. V `core/` bol rozbehaný `llama_engine.py` – jednorazový skript bez triedy.
+
+### Prečo GPU nefungovala
+
+Build bol spustený takto:
+
+```
+set CMAKE_ARGS=-DGGML_CUDA=on
+set FORCE_CMAKE=1
+py -m pip install llama-cpp-python==0.3.36 --upgrade --force-reinstall --no-cache-dir
+```
+
+`set` je syntax cmd.exe. V PowerShelli je to alias pre `Set-Variable`, takže to vyrobilo PowerShell premennú s názvom `CMAKE_ARGS=-DGGML_CUDA=on` a hodnotou `$null`. **Bez jediného chybového hlásenia.** cmake o CUDA nedozvedel a postavil CPU variantu – `pip install` prešiel, appka fungovala, len bez GPU.
+
+Diagnostika, ktorá to ukázala za 10 sekúnd: v `.venv/Lib/site-packages/llama_cpp/lib/` bola len `ggml-cpu.dll`, `ggml-cuda.dll` chýbala. Pozor na falošnú stopu – `include/ggml-cuda.h` tam bol, ale header sa pribalí vždy, aj v CPU builde.
+
+Zapísané do ALMANAC §9 spolu s druhou pascou, ktorá tam tiež je: `py` bez aktivovaného venv inštaluje do globálneho Pythonu 3.14.
+
+### Riešenie: oficiálny predkompilovaný wheel
+
+Build sa neopravoval. Namiesto toho `pip install -r requirements-llama-win-cuda.txt`, teda presne to, čo ALMANAC §8 krok 3 predpisoval – 218 MB, bez kompilácie. Tým sa naraz zodpovedali **obe neoverené otázky** zo §10.1:
+
+- **`sm_120` áno** – `compute capability 12.0`, `offloaded 35/35 layers to GPU`, `CUDA0 model buffer = 2368 MiB`.
+- **cuBLAS vo wheeli nie** – `ggml-cuda.dll` importuje `cublas64_13.dll`, `nvcuda.dll`, `nvcudart_hybrid64.dll`. CUDA Toolkit je stále potrebný, takže distribučný problém zo §10 (~507 MB DLL) platí.
+
+Vedľajšie zistenie: **prvý beh po inštalácii mal `prompt eval` 21 s (1,73 t/s), druhý 0,3 s (127 t/s).** Vyzeralo to na PTX JIT, ale `%LOCALAPPDATA%\NVIDIA\ComputeCache` neexistuje, takže to nie je potvrdené – zapísané ako jednorazový warm-up neznámej príčiny. Pre UI to znamená, že prvé načítanie modelu nesmie vyzerať ako zamrznutie.
+
+Pri tom padol aj pôvodný dojem zo „zlého výkonu“: ustálene je to ~103 t/s generovanie na gemma-3-4b Q4_K_M.
+
+### Hotové
+
+**`core/settings.py`** – `LoadParams` a `SamplingParams`, oba `frozen` dataclass.
+Delenie presne podľa §7: load-time parametre idú do konštruktora `Llama(...)` a ich zmena znamená reload, sampling parametre idú do `create_chat_completion()` pri každej požiadavke.
+`clamped()` je **zámerne samostatná metóda, nie `__post_init__`** – oprava hodnôt z databázy má byť viditeľný krok, nie tichá zmena v konštruktore. `validate()` rieši cestu k modelu a vyhadzuje `ModelFormatError` / `ModelNotFoundError`.
+`to_dict()` / `from_dict()` sú priamo schéma tabuľky `chat_settings` pre krok 6.
+`LoadParams.for_hardware()` berie `n_threads` a `n_gpu_layers` z `HardwareProfile`, nie z `psutil` priamo – profil už rieši P/E jadrá a chýbajúcu GPU.
+
+**`core/llm_engine.py`** – trieda `LlmEngine`, bez importu PyQt6.
+Model sa načítava v `load()`, nie v konštruktore (§5, bod 2), a `load()` sa chová ako no-op, keď sú parametre rovnaké – reload si vyžiada `force=True`.
+`import llama_cpp` je **vnútri funkcie**, nie na úrovni modulu: import trvá dlho, inicializuje GPU a na zlom wheeli zlyhá. Appka sa musí dať spustiť aj bez enginu a chybu ukázať v UI ako `BackendUnavailableError`.
+Stop je `threading.Event`, takže `request_stop()` sa smie volať z UI vlákna. Pri zastavení **generátor skončí normálne** a `stopped` je `True` – doteraz vygenerovaný text je platný výstup, nie chyba.
+Pamäť sa meria **nanovo** pri `load()`, nie z `HardwareProfile` (§4) – hodnota z času štartu appky je už neplatná. Výsledkom je `Notice`, nie výnimka; keď sa model naozaj nenačíta, chybu nahlási llama.cpp a `load()` ju podľa textu preloží na `InsufficientMemoryError` alebo `ModelLoadError`.
+Počet vrstiev sa číta z metadát (§5, bod 3): `n_layers` = 34 blokov, ale `n_layers_offloadable` = **35**, lebo llama.cpp offloaduje aj výstupnú vrstvu. Toto druhé číslo je maximum slidera CPU/GPU.
+
+Konzolový test je v `__main__`: `python -m core.llm_engine [cesta.gguf]` – vypíše backend a parametre, načíta model, odstreamuje odpoveď a potom úmyselne zastaví generovanie po 10 častiach.
+
+### Opravené / zahodené
+
+- `core/llama_engine.py` (skript) **zmazaný** – nahradený `core/llm_engine.py`, čo je aj názov zo architektúry v §6. Dva takmer rovnaké názvy vedľa seba by boli pasca.
+- V `settings.py` zostal po prvom zápise mŕtvy riadok (`known = {... if False}` + `del known`) – odstránený.
+- Číslovanie krokov v ALMANAC §8 bolo pokazené (po `3.` nasledovalo znova `2.`) – prečíslované na 0–10 a pridaný krok `core/context.py`.
+
+### Nedoriešené do ďalšej session
+
+1. **MacBook** – nainštalovať `requirements-llama-mac.txt` (0.3.36 Metal) a spustiť `python -m core.llm_engine`. Neoverené zostáva Metal wheel aj `_performance_cores_macos()`.
+2. **`core/context.py`** – počítanie tokenov a orezávanie histórie. Engine už dáva `tokenize()`, `count_tokens()`, `n_ctx`, `n_ctx_train`.
+3. **Čítanie metadát `.gguf` bez načítania modelu** – na panel nastavení (krok 7) treba počet vrstiev a `n_ctx_train` **pred** loadom, aby sa dal nastaviť rozsah slidera. Teraz sú dostupné až po `load()`.
+4. **stderr z llama.cpp** – `verbose=False` neutíši všetko (napr. `llama_kv_cache_iswa: ...`). Pri UI bude treba presmerovať stderr.
+5. **Príčina 21 s warm-upu** pri prvom behu – nezistená, len zaznamenaná.
+6. Model `gemma-3-4b-it-Q4_K_M.gguf` (2,4 GB) je skopírovaný v `models/`. Gitu neprekáža (`/models/` aj `*.gguf` sú v `.gitignore`), ale ALMANAC §4.1 hovorí modely do projektu nekopírovať – rozhodnúť, či to tak zostane.
+7. **Variant inštalačky** – stále nerozhodnuté, tri možnosti v ALMANAC §10.
+
+---
+
+## 2026-10-28 / 29 – nastavenia, cesty, úložisko
+
+**Stav na začiatku:** jadro hotové (`errors`, `hardware`, `settings`, `llm_engine`), úložisko nulové. Otázka „kde sa budú ukladať nastavenia“ otvorená.
+
+### Zmena spôsobu práce
+
+Od tejto session sa pracuje **po malých kusoch** – autor chce kódu rozumieť a písať ho sám, nie dostávať hotové moduly na schválenie. Zapísané do ALMANAC §8.1, platí aj pre ďalšie sessiony. Prakticky to znamená: návrh → jeden blok → prejdenie → ďalší blok.
+
+### Návrh nastavení a úložiska
+
+Pôvodný nápad „všetko do SQLite“ padol na jednej položke zo zoznamu nastavení: **cesta k chatom**. Uložiť cestu k databáze do databázy, ktorú ešte nevieš nájsť, nejde. Z toho vzniklo pravidlo v §7.1: *do JSON-u to, čo treba vedieť predtým, než sa otvorí databáza*.
+
+Rozhodnuté (podrobne v ALMANAC §7.1): import modelu je **kópia** do `models_dir`, chat vzniká **pri prvej správe**, pri výmene modelu sa resetujú **len parametre závislé od modelu**, cesta k chatom **nie je** vo v1 nastaviteľná.
+
+`settings.json` do `vars/` **nejde** – `vars/` je vedľa kódu, teda v zabalenej appke v inštalačnom adresári, kde používateľ bez admina nezapíše a na macOS by zápis rozbil podpis `.app`. Navyše by sa commitoval do Gitu. Hranica: `vars/` = pevné dáta dodané s kódom, `app_dir()` = to, čo sa mení používaním.
+
+### Hotové
+
+**`core/paths.py`** – jediné miesto, ktoré vie, kde má appka dáta.
+Pri písaní sa overením `platformdirs` 4.9.6 zrušil pôvodný návrh dvoch adresárov: `user_config_dir()` a `user_data_dir()` vracajú na Windows aj macOS **to isté miesto** (overené aj v zdrojáku `platformdirs/macos.py`), líšia sa len na Linuxe, ktorý je mimo rozsah. Dva názvy pre jednu cestu = príležitosť pomýliť sa, takže jeden adresár.
+Zistené pasce: `appauthor=False` je povinné (inak `AppData\Local\FUKAI\FUKAI`), `roaming` nechať vypnuté (doménové účty kopírujú `Roaming` pri každom prihlásení, a modely majú gigabajty).
+Pridaná premenná **`FUKAI_HOME`**, ktorá `app_dir()` prepíše – bez nej by dev a ostré dáta boli v jednej databáze a testy by zapisovali do `AppData`.
+
+**`storage/constants.py` + `storage/database.py`** – spojenie, pragmy, schéma, migrácie, operácie nad `models`.
+Trieda `Database`, nie sada funkcií ako v `hardware.py`: **spojenie je stav a musí ho niekto držať**. Kostra vyšla skoro riadok po riadku rovnaká ako `LlmEngine` – `connect`/`close`/`_require_conn` namiesto `load`/`unload`/`_require_loaded`, lebo oba moduly riešia to isté: zdroj, ktorý sa otvorí, chvíľu žije a zavrie sa.
+Migrácie cez `PRAGMA user_version` hneď od začiatku, nie až keď budú treba – prvá príde s prílohami (krok 10) a vtedy už v databáze budú dáta.
+
+**Hranica, ktorá sa drží:** `database.py` vie SQL, nevie pravidlá. „Chat vzniká pri prvej správe“ ani „model sa počíta za použitý pri výbere“ tam nepatria – rozhoduje o tom vrstva nad ním. Preto `get_model()` nezapisuje `last_used_at` a `mark_model_used()` je zvlášť; všeobecne: **čo sa volá `get_*`, nemá meniť stav.**
+
+### Schéma
+
+Prešla tromi verziami. Prvý návrh mal celú konverzáciu ako `chats.content TEXT`, druhý ju presunul do tabuľky `content` 1:1 – čo ten istý problém len presťahovalo. Rozhodujúca zmena bola **`chats 1:N content`**, teda jeden riadok = jedna správa. Bez toho sa nedá streamovať bez prepisovania celého blobu, orezávať kontext podľa tokenov per správa, označiť prerušenú odpoveď ani navesiť prílohu.
+
+Výsledok: `models`, `chats`, `content`, `properties`. Parametre a metadáta sú JSON (`data`, `meta`), ale to, podľa čoho sa radí a filtruje, sú stĺpce (`last_used_at`, `imported_at`, `role`, `tokens`). Dôvod pre JSON: parametrov bude s každým novým sliderom pribúdať a nechceme migráciu pri každom.
+
+### Opravené chyby (a prečo stáli za zmienku)
+
+| Chyba | Prečo bola zradná |
+|---|---|
+| `INT PRIMARY KEY` namiesto `INTEGER PRIMARY KEY` | všetky riadky dostanú `id = NULL`, bez protestu; cudzie kľúče by ukazovali na nič |
+| chýbajúce `ON DELETE CASCADE` | so zapnutým `foreign_keys` zmazanie chatu **zlyhá**, s vypnutým nechá siroty – obe ticho |
+| `chats.title ... UNIQUE` | druhý chat menom „Nový chat“ neprejde, a appka ich tak pomenúva |
+| `DEFAULT '2000-01-01 00:00:00'` | konštanta, nie „teraz“ – chýbali zátvorky okolo `datetime('now')` |
+| `datetime(now)` | bez úvodzoviek je `now` názov stĺpca → `no such column: now` |
+| `ensure_dir(app_dir)` bez zátvoriek | odovzdá funkciu; `TypeError` navyše neprejde cez `except (OSError, sqlite3.Error)` |
+| `hint=f"{exc}"` | technický text do poľa, kde má byť rada pre používateľa (`errors.py` to delí na `message`/`hint`/`detail`) |
+| `c.commit()` | `commit()` je na spojení, nie na kurzore |
+| `_with_meta` odsadený do triedy | stane sa atribútom triedy, ale volá sa holým menom → `NameError` |
+| `json.loads(x or {})` | záloha je slovník, nie reťazec → `TypeError` |
+| `from __future__` na druhom riadku | musí byť prvý *príkaz* v súbore, pred ním len docstring a komentáre |
+
+### Poučenie, ktoré stojí za tých jedenásť riadkov vyššie
+
+Tri z piatich metód nad `models` padli pri prvom zavolaní, hoci „to prešlo“. Dôvod: `__main__` self-test overoval len to, že sa otvorí spojenie – žiadnu z tých metód nezavolal. **Pokiaľ self-test nevolá to, čo píšeš, chybu nájdeš až v UI, kde sa hľadá oveľa horšie.** Self-test teraz prechádza celý cyklus nad temp databázou: pridaj model → vypíš → načítaj → označ použitý → over poradie → vytvor chat so správami → zmaž model → zmaž chat a over, že `CASCADE` aj `SET NULL` zabrali.
+
+### Nedoriešené do ďalšej session
+
+1. **Operácie nad `chats`, `content` a `properties`** – `create_chat`, `list_chats`, `rename_chat`, `delete_chat`, `set_model`, `add_message`, `get_messages`, `get_properties`, `set_properties`, reset parametrov cez `json_remove`.
+2. **`core/app_settings.py`** – `settings.json`, zatiaľ neexistuje.
+3. **`chats.date` sa volá `date`, ale bude sa aktualizovať** pri každej novej správe (sidebar radí podľa poslednej aktivity). `updated_at` by čitateľa neklamalo.
+4. **`SELECT *` v `list_models` a `get_model`** – pri zmene schémy sa ticho zmenia kľúče v `dict`-och, ktoré očakáva UI. Vypísať stĺpce namenovito.
+5. **Čítanie metadát `.gguf` bez načítania modelu** – teraz už nutnosť, nie bonus: import ich musí zapísať do `models.meta` a popup aj panel vlastností ich potrebujú pred `load()`.
+6. Body 3–7 z predchádzajúcej session stále platia.

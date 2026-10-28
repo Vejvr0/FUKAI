@@ -49,11 +49,22 @@ Dôsledky oproti pôvodnému stavu:
 - **CPU a CUDA sú na tej istej verzii** (0.3.36), čo pôvodný pin 0.3.20 neumožňoval.
 - Pri prechode treba **preinštalovať aj MacBook** na 0.3.36, aby vetvy nebežali na rôznych llama.cpp.
 
-**Neoverené:** či CUDA wheel obsahuje `sm_120` (Blackwell, PC 1) a či stále vyžaduje nainštalovaný CUDA Toolkit (`cublas64_13.dll`), alebo nesie cuBLAS v sebe. Zistí sa pri prvej inštalácii.
+**Overené 2026-10-28 na PC 1 – oba body naraz:**
+
+| Otázka | Odpoveď |
+|---|---|
+| Obsahuje wheel `sm_120`? | **Áno.** `compute capability 12.0`, `llama_supports_gpu_offload() == True`, `offloaded 35/35 layers to GPU`. |
+| Nesie wheel cuBLAS? | **Nie.** `ggml-cuda.dll` (121 MB) importuje `cublas64_13.dll`, `nvcuda.dll` a `nvcudart_hybrid64.dll` → CUDA Toolkit je stále potrebný, §10 platí. |
+
+Výkon gemma-3-4b Q4_K_M, `n_ctx=2048`, `n_gpu_layers=-1`: load 1,8 s, prompt eval ~127 t/s, generovanie ~103 t/s, `CUDA0 model buffer = 2368 MiB`.
+
+**Jednorazový warm-up pri prvom behu po inštalácii:** prvý `prompt eval` trval 21 s (1,73 t/s), druhý a tretí beh už 0,3 s. Príčina **nie je overená** – adresár `%LOCALAPPDATA%\NVIDIA\ComputeCache` neexistuje, takže PTX JIT to nepotvrdzuje. Dôsledok pre UI: prvé načítanie modelu môže trvať desiatky sekúnd, progres sa nesmie javiť ako zamrznutie.
+
+Ako sa prítomnosť CUDA backendu overí rýchlo: v `.venv/Lib/site-packages/llama_cpp/lib/` musí byť **`ggml-cuda.dll`**. Súbor `include/ggml-cuda.h` tam je vždy, aj v CPU builde – header nie je dôkaz.
 
 ### 3.1 CUDA wheels – ako to naozaj funguje (overené 2026-10-27)
 
-> **Platnosť:** táto sekcia opisuje wheels od `dougeeai`, ktoré sme používali do 2026-10-28. Od prechodu na oficiálne wheels 0.3.36 (§10.1) sa **wheel podľa architektúry nevyberá** – oficiálny je jeden pre všetky NVIDIA karty. Tabuľka compute capability nižšie zostáva užitočná na **diagnostiku a hlásenia** používateľovi (`core/hardware.py`, `vars/hw.json`), nie na výber balíka.
+> **Platnosť:** táto sekcia opisuje wheels od `dougeeai`, ktoré sme používali do 2026-10-28. Od prechodu na oficiálne wheels 0.3.36 (§10.1) sa **wheel podľa architektúry nevyberá** – oficiálny je jeden pre všetky NVIDIA karty, *overené inštaláciou na PC 1 (2026-10-28): jeden wheel bez `sm` v názve rozbehal `sm_120`*. Tabuľka compute capability nižšie zostáva užitočná na **diagnostiku a hlásenia** používateľovi (`core/hardware.py`, `vars/hw.json`), nie na výber balíka.
 
 Pôvodná otvorená otázka bola o „spätnej kompatibilite CUDA 13.0 → 12.8“. Tá sa **vôbec nerieši** – wheels od tretej strany boli vydávané **zvlášť pre každú GPU architektúru**. Pre `0.3.20 + CUDA 13.0 + win_amd64` existovali:
 
@@ -83,14 +94,14 @@ Compute capability je vlastnosť kremíka a aktualizáciou ovládača sa **nikdy
 | Stroj | CPU | GPU / VRAM | RAM | Backend |
 |---|---|---|---|---|
 | MacBook | Apple M2 (4P + 4E) | integrovaná, zdieľaná pamäť | **8 GB unified** | Metal – `core/hardware.py` *overené 2026-10-28* |
-| PC 1 | Intel Core Ultra 7 265K (8P + 12E, bez HT) | RTX 5060 Ti **16 GB** (Blackwell, sm_120) | 32 GB | CUDA Toolkit 13.0, driver 617.42 – *overené 2026-10-27* |
+| PC 1 | Intel Core Ultra 7 265K (8P + 12E, bez HT) | RTX 5060 Ti **16 GB** (Blackwell, sm_120) | 32 GB | CUDA Toolkit 13.0, driver 617.42 – *offload na GPU overený 2026-10-28, pozri §3* |
 | PC 2 | – | RTX 4080 16 GB (Ada, sm_89) | – | CUDA, wheel `sm89` (pozri §3.1) |
 
 Dôsledky pre návrh:
 
 - **Mac 8 GB je najslabší článok.** macOS si berie ~3 GB, prakticky ~4–5 GB pre model + KV cache → modely do ~3–4B (Q4), 7–8B Q4 len na hrane s malým `n_ctx`. Aplikácia musí pred načítaním odhadnúť pamäť a varovať.
 - **Rozhodnuté 2026-10-28: samostatný „rozpočet pamäte“ v `hardware.py` sa nerobí.** Stačí `ram_available_mb` z profilu a orientačné porovnanie s veľkosťou `.gguf` priamo v `llm_engine`, s `Notice` pri nedostatku. Na Macu je `ram_available_mb` aj tak jediné správne číslo, lebo GPU berie z tej istej pamäte. **Pozor:** `ram_available_mb` (aj `gpu.vram_free_mb`) sa merajú raz pri `detect()`, takže pred načítaním modelu si `llm_engine` musí spraviť **nové** meranie – hodnota z času štartu appky je už neplatná.
-- Pri každom PC overiť, že `n_gpu_layers=-1` reálne beží na GPU (log llama.cpp / `nvidia-smi`).
+- Pri každom PC overiť, že `n_gpu_layers=-1` reálne beží na GPU (log llama.cpp / `nvidia-smi`). **PC 1 overené 2026-10-28** (§3); MacBook a PC 2 zostávajú. Overovať sa má podľa riadku `load_tensors: offloaded N/N layers to GPU` a `CUDA0 model buffer size`, nie podľa toho, že appka nespadla.
 - **Oba stroje majú P- a E-jadrá, takže `cores_physical` je na `n_threads` zlá hodnota na oboch.** 265K: `psutil` vráti 20, správne je 8. M2: vráti 8, správne sú 4. `psutil` P a E nerozlíši (na 265K nie je ani HyperThreading, takže fyzické = logické = 20).
   Vyriešené v `core/hardware.py` ako `_performance_cores()`, hodnota je v profile ako `cores_performance` a vystupuje ako `n_threads`:
   - **Windows** – `GetLogicalProcessorInformationEx` cez `ctypes`, počítajú sa jadrá s najvyšším `EfficiencyClass`. *Overené na PC 1 (2026-10-28): `{trieda 1: 8 jadier, trieda 0: 12}` → 8 P-jadier.* Pozor: P a E jadrá sú v zozname **premiešané** (jadro 0,1 = P, jadro 2 = E), takže „vezmi prvých N“ nefunguje. Záznamy majú premenlivú dĺžku, treba ju čítať z každého záznamu zvlášť.
@@ -164,28 +175,124 @@ Plochá štruktúra (nie `src/fukai/`) – je to aplikácia, nie knižnica, a je
 - **CPU/GPU** sa ovláda cez `n_gpu_layers` (0 = CPU, -1 = všetko na GPU, medzi tým čiastočný offload) → v UI slider, nie prepínač.
 - **Detekcia HW:** NVIDIA cez `nvidia-ml-py` (importuje sa ako `pynvml`) / `nvidia-smi` (meno, VRAM), Apple Silicon cez `platform.machine() == "arm64"` (Metal), RAM cez `psutil`. Pozn.: balík `pynvml` na PyPI je zastaraný alias, inštaluje sa `nvidia-ml-py`.
 - **Vlákna:** načítanie aj generovanie mimo UI vlákna (QThread worker), tokeny do UI cez signály. Stop = prerušenie generátora.
-- **Chat template:** vždy `create_chat_completion()` – template sa berie z metadát `.gguf`. Žiadne ručné skladanie promptov.
+- **Chat template:** vždy `create_chat_completion()` – template sa berie z metadát `.gguf`. Žiadne ručné skladanie promptov. *Overené 2026-10-28: gemma-3-4b má `tokenizer.chat_template` v metadátach a llama-cpp-python ho zvolí samo (`chat_format == "chat_template.default"`).*
+- **Počet vrstiev pre slider `n_gpu_layers`:** `llama_model_n_layer()` vráti počet **blokov** (gemma-3-4b: 34), ale llama.cpp offloaduje **35/35** – navyše je výstupná vrstva. Maximum slidera je teda `n_layer + 1`, v engine ako `n_layers_offloadable`.
+- **`verbose=False` neutíši llama.cpp celkom** – časť hlásení ide na stderr aj tak (napr. `llama_kv_cache_iswa: ...`). Pri UI bude treba stderr presmerovať, nestačí prepínač.
 - **Kontext:** história sa orezáva podľa reálneho počtu tokenov (`llm.tokenize`). Príloha nad limit → orezať + upozorniť. RAG až ako neskorší bonus.
 - **Web:** `ddgs` (DuckDuckGo) na vyhľadávanie, `requests` + `trafilatura` na extrakciu textu. Žiadny scraping Google. Spúšťa používateľ prepínačom, model si ho nevolá sám (tool-calling malých modelov je nespoľahlivý).
 - **Súbory:** `pypdf` (MIT; PyMuPDF je rýchlejší, ale AGPL), `openpyxl`/`pandas` → markdown tabuľka, `python-docx`. OCR mimo rozsahu.
-- **Úložisko:** SQLite cez `platformdirs` – tabuľky `chats`, `messages`, `chat_settings`, `attachments`.
+- **Úložisko:** dve miesta, nie jedno – pozri §7.1.
 - **Render odpovedí:** `QTextBrowser.setMarkdown()` + `pygments` na kód. Bez QWebEngine (veľký build).
 - **Distribúcia:** PyInstaller, zvlášť build pre Windows a Mac. Na Windows potom Inno Setup, na Macu `.dmg`/`.pkg`. Podrobnosti a nevyriešené body v §10.
 
+### 7.1 Nastavenia a úložisko – ROZHODNUTÉ 2026-10-28
+
+**Dve úložiská, nie jedno.** Pôvodné „všetko do SQLite“ nevychádza: medzi nastaveniami aplikácie je *cesta k chatom*, čiže cesta k samotnej databáze. Uložiť ju do databázy, ktorú ešte nevieš nájsť, nejde.
+
+Hranica: **do JSON-u ide to, čo treba vedieť *predtým*, než sa otvorí databáza.** Všetko ostatné do SQLite. Vedľajší efekt je dobrý – appka sa spustí aj s rozbitou databázou a vie povedať prečo.
+
+| | kde | čo |
+|---|---|---|
+| Nastavenia aplikácie | `settings.json` v `app_dir()` | `models_dir`, povoliť prílohy, povoliť web search, téma, posledný model, `version` pre migrácie |
+| Dáta | `fukai.db` (SQLite) v `app_dir()` | `models`, `chats`, `content` (správy), `properties` (nastavenia chatu); `attachments` pribudnú v kroku 10 |
+| Pevné dáta | `vars/` v repe | `hw.json` – minimálne verzie OS, mapa compute capability |
+
+**Jeden adresár, dve úložiská** – rozhodnuté 2026-10-28 po overení `platformdirs` 4.9.6. `app_dir()` je v `core/paths.py` a je to `platformdirs.user_data_dir("FUKAI", appauthor=False)`, na PC 1 teda `C:\Users\<user>\AppData\Local\FUKAI`. Obsahuje `settings.json`, `fukai.db` a predvolene aj `models/`.
+
+Pôvodný návrh mal `user_config_dir()` pre JSON a `user_data_dir()` pre databázu. **Zamietnuté:** na Windows aj macOS vracajú obe funkcie to isté miesto (`platformdirs/macos.py` to má priamo v docstringu: *„config directory tied to the user, same as `user_data_dir`“*), líšia sa iba na Linuxe, ktorý je mimo rozsah (§1). Dva názvy pre jednu cestu sú len príležitosť pomýliť sa. Delenie na **dve úložiská** (JSON vs SQLite) platí ďalej – to bolo o bootstrape, nie o adresároch.
+
+Dve pasce zistené pri tom:
+
+- **`appauthor=False` je povinné.** Bez neho platformdirs na Windows vloží segment s menom autora a keď ho nedostane, použije názov aplikácie → `AppData\Local\FUKAI\FUKAI`.
+- **`roaming` nechať vypnuté.** `roaming=True` dá `AppData\Roaming`, ktorý sa na doménových účtoch kopíruje pri každom prihlásení – pri gigabajtových modeloch v tom istom adresári katastrofa.
+
+platformdirs cestu iba **vypočíta**, adresár nevytvorí – na to je `ensure_dir()`, inak prvé `sqlite3.connect()` spadne.
+
+**Premenná prostredia `FUKAI_HOME` prepíše `app_dir()`** (rozhodnuté 2026-10-28). Dôvod: bez nej je dev adresár ten istý ako v nainštalovanej appke, takže vývojové chaty a ostré dáta by boli v jednej databáze a rozbitá schéma počas vývoja by rozbila aj nainštalovanú appku. Testy by navyše zapisovali priamo do `AppData`.
+
+- Počas vývoja sa nastavuje na priečinok v projekte (v `.gitignore`), takže dáta sú vidno vedľa kódu a reset je zmazanie adresára.
+- Zabalená appka premennú nastavenú nemá → použije `AppData`, takže dev a ostré dáta sa nemiešajú.
+- Hodnota sa `.resolve()`-uje, aby relatívna cesta nezávisela od toho, odkiaľ sa appka spustí.
+- Prázdna hodnota (`FUKAI_HOME=`) je falsy, takže sa korektne prepadne na `AppData`.
+- Keďže premenná presúva **celé** dáta aplikácie, zabudnutá nastavená hodnota je potichu zavádzajúca – self-test v `core/paths.py` preto vypisuje, či je override aktívny.
+
+**`settings.json` nepatrí do `vars/`** (zvažované 2026-10-28, zamietnuté). `vars/` je vedľa kódu, teda v zabalenej appke v inštalačnom adresári – na Windows tam používateľ bez admina nezapíše a na macOS je to vnútri `.app` bundle, kde zápis **rozbije podpis** aplikácie. Navyše by súbor skončil v Gite (`git checkout` prepíše používateľovi nastavenia) a na stroji s viacerými používateľmi by ho zdieľali všetci. Je to chyba prototypu zo §5, bod 8.
+
+Hranica: **`vars/` = pevné dáta dodané s kódom, iba na čítanie, v Gite. `user_config_dir()` = to, čo sa mení používaním, zapisovateľné, nikdy v Gite.**
+
+**Import modelu = kópia do úložiska FUKAI** (ako Ollama), nie odkaz na cestu (ako LM Studio). Cieľ je `models_dir`, predvolene `user_data_dir()/models`. Dôsledky:
+
+- `models.filename` môže byť **relatívne** k `models_dir`, takže presun knižnice nerozbije databázu. To je hlavný zisk tohto rozhodnutia.
+- Import trvá minúty → worker s progresom a možnosťou zrušiť, kontrola voľného miesta vopred, kopírovať do `*.gguf.part` a premenovať až po úspechu (inak prerušený import nechá v knižnici poškodený model, ktorý sa tvári ako platný).
+- Duplikáty sa zisťujú podľa názvu + veľkosti. Hashovanie obsahu je pri 30 GB neúnosné.
+- Zmena `models_dir` platí len pre **budúce** importy, existujúce modely sa nepresúvajú.
+
+**Zoznam modelov je tabuľka, nie skenovanie priečinka.** Popup v input riadku musí vypísať modely a panel vlastností potrebuje rozsahy slidrov (max `n_ctx` = `n_ctx_train`, max `n_gpu_layers` = vrstvy + 1) **pred** načítaním modelu. Preto sa metadáta `.gguf` čítajú **raz pri importe** a cachujú v tabuľke `models`. Z toho vyplýva nutnosť čítača hlavičky `.gguf`, ktorý nenačíta model – dnes sú tie čísla dostupné až po `load()`.
+
+**Chat vzniká pri prvej správe,** nie pri otvorení prázdneho okna (ako Ollama aj LM Studio). Blank chat je len stav UI – výber modelu a vlastnosti žijú do prvej správy v pamäti. Inak by sa pri každom spustení nazbierali prázdne chaty.
+
+**Pri výmene modelu sa resetujú len parametre závislé od modelu.** Zoznam vlastností chatu mieša dva druhy a tá hranica je tá istá ako `LoadParams` vs `SamplingParams` zo §7:
+
+- *závislé od modelu* – `n_ctx`, `n_gpu_layers`, `n_threads`, `n_batch`. Iný model má iný `n_ctx_train` aj iný počet vrstiev, takže hodnota z predchádzajúceho modelu je neplatná.
+- *nezávislé* – `temperature`, `top_p`, `top_k`, `repeat_penalty`, `max_tokens`. Keď si používateľ nastavil `temperature=0.3`, výmena modelu to nemá zahodiť.
+
+Aby to bolo implementovateľné, schéma musí rozlíšiť **„používateľ to nastavil“ od „to je predvolená hodnota“**. Realizované ako `properties.data` – JSON, kde **chýbajúci kľúč** = „použi predvolené pre aktuálny model“ a prítomný = „nastavené ručne“. Výmena modelu je potom jediný príkaz, nie rozhodovacia logika:
+
+```sql
+UPDATE properties SET data = json_remove(data, '$.n_ctx', '$.n_gpu_layers', '$.n_threads', '$.n_batch')
+WHERE chat_id = ?;
+```
+
+**Prečo JSON a nie typované stĺpce** (rozhodnuté 2026-10-28): parametrov bude s každým novým sliderom v krokoch 9–11 pribúdať a JSON nevyžaduje migráciu schémy pri každom z nich. Cena je, že schéma už nehovorí, čo sa dá nastaviť – ten kontrakt žije v `core/settings.py` (`LoadParams`, `SamplingParams`).
+
+Hranica, podľa ktorej sa to delí a platí aj pre `models.meta` a `content.data`: **do JSON-u to, čo aplikácia číta a zapisuje ako celok; do stĺpcov to, podľa čoho sa radí, filtruje alebo hľadá.** Preto sú `last_used_at`, `imported_at`, `content.role` a `content.tokens` samostatné stĺpce.
+
+**Cesta k chatom nie je v prvej verzii nastaviteľná** – databáza je vždy v `user_data_dir()`. Prenosnosť databázy (presun existujúcej, neplatná cesta, relatívne adresovanie príloh) sa rieši až neskôr.
+
+Ďalšie rozhodnuté drobnosti:
+
+- **Web search má dve úrovne:** globálne *je funkcia dostupná* (nastavenie aplikácie) a per-message *použiť ju teraz* (prepínač, §2). Treba to takto pomenovať, inak budú v UI dva prepínače, ktoré si odporujú.
+- **Prílohy sa ukladajú ako extrahovaný text,** nie ako originálny súbor – do promptu ide text, originál by databázu nafúkol bez úžitku.
+- **Verziovanie schémy cez `PRAGMA user_version`,** nie vlastnou tabuľkou.
+- **`PRAGMA foreign_keys = ON` sa nastavuje pri každom pripojení.** Bez toho cudzie kľúče *ticho* nefungujú a `ON DELETE CASCADE` sa nikdy nevykoná.
+- **`messages.token_count` je cache závislá od modelu** – pri výmene modelu sa musí vynulovať, inak orezávanie histórie počíta cudzím tokenizérom.
+- **`chats.model_id` má `ON DELETE SET NULL`** – zmazanie modelu nezmaže chaty, história je text a dá sa čítať aj bez modelu.
+
+**Konkrétna schéma tabuliek je zatiaľ len návrh, neschválená.**
+
+### 7.2 SQLite – pasce overené 2026-10-28/29
+
+Všetky nižšie sú overené spustením, nie prečítané v dokumentácii. Spoločná vlastnosť: **ani jedna nevyhodí chybu v momente, keď ju spravíš.**
+
+- **`INTEGER PRIMARY KEY` ≠ `INT PRIMARY KEY`.** Len presný zápis `INTEGER PRIMARY KEY` robí zo stĺpca alias na `rowid` a čísluje sa sám. Pri `INT PRIMARY KEY` dostanú **všetky riadky `id = NULL`** a SQLite proti duplicitným NULL-om v primárnom kľúči neprotestuje. Mimo primárneho kľúča je `INT` v poriadku.
+- **`PRAGMA foreign_keys` je po každom `connect()` vypnutý.** Bez neho sa `ON DELETE CASCADE` nikdy nevykoná a v databáze zostanú siroty – ticho. Preto je v `PRAGMAS` a nastavuje sa pri každom spojení, nie raz pri vytvorení súboru.
+- **`DEFAULT '2000-01-01 00:00:00'` je konštanta, nie „teraz“.** Výraz musí byť v zátvorkách: `DEFAULT (datetime('now'))`. Bez nich dostane každý riadok doslova ten dátum zo schémy.
+- **`datetime(now)` bez úvodzoviek** berie SQLite ako názov stĺpca → `no such column: now`. Správne je `datetime('now')`.
+- **`datetime('now')` je UTC, `datetime.now()` v Pythone je lokálny čas.** Rozdiel bol na PC 1 hodina. **Rozhodnuté: všetky časy píše SQLite**, Python do časových stĺpcov nesiaha; na lokálny čas sa prevádza až pri zobrazení.
+- **Formát času je `'YYYY-MM-DD HH:MM:SS'`**, teda s medzerou, nie `T` z `isoformat()`. Je to presne to, čo `datetime('now')` vracia, triedi sa správne ako obyčajný text a vie využiť index. Miešanie oboch tvarov v jednom stĺpci by triedenie rozbilo, lebo `T` je v ASCII vyššie než medzera.
+- **`PRAGMA` neprijíma parametre** – `PRAGMA user_version = ?` je syntaktická chyba, musí ísť cez f-string.
+- **`with conn:` nie je zatvorenie spojenia**, ale transakcia: na konci commit, pri výnimke rollback. Spojenie zostáva otvorené.
+- **Cudzie kľúče sa neindexujú samy.** SQLite indexuje automaticky len `PRIMARY KEY` a `UNIQUE`, preto `CREATE INDEX idx_content_chat ON content(chat_id)` – načítanie chatu je `WHERE chat_id = ?` a je to najčastejší dotaz aplikácie.
+- **`str(dict)` sa do JSON stĺpca uložiť *dá*** – SQLite od 3.42 vie JSON5, takže `json_extract` zvládne aj jednoduché úvodzovky. Ale `json.loads()` v Pythone ich neprijme, takže by si to zapísal a už neprečítal. Prevod `dict` ↔ JSON robí `storage/database.py`, nie volajúci.
+- **WAL súbory `-wal` a `-shm`** vzniknú počas behu a pri korektnom zatvorení sa zlúčia a zmažú. Keď tam zostanú, appka buď beží, alebo predtým spadla. Pri zálohovaní patria k databáze.
+
 ## 8. Poradie práce a stav
 
-0. [x] `requirements.txt`, `requirements-llama-win-cuda.txt`, `requirements-llama-mac.txt` hotové (2026-10-27). V `.venv` je zatiaľ **iba `psutil`** – PyQt6 ani llama-cpp-python sa ešte neinštalovali.
+0. [x] `requirements.txt`, `requirements-llama-win-cuda.txt`, `requirements-llama-mac.txt` hotové (2026-10-27). V `.venv` na PC 1 je `psutil` + `llama-cpp-python` 0.3.36 CUDA (2026-10-28). **PyQt6 ešte nie je nainštalovaný** – príde s krokom 4.
 1. [x] `core/errors.py` – hierarchia chýb delená **podľa príčiny**, nie podľa modulu. Každá chyba nesie tri oddelené texty: `message` (veta pre používateľa), `hint` (čo s tým), `detail` (technický text do logu). Plus `Notice` + `Severity` na **nefatálne** oznámenia. Vďaka tomu UI vykresľuje chyby aj varovania rovnako. `hint` je keyword-only, aby sa tie tri texty nedali zameniť.
 2. [x] `core/hardware.py` – detekcia a 4 kontroly (`check_os`, `check_cores`, `check_ram`, `check_gpu`). Overené na PC 1 aj MacBooku. Dáva tri veci, pre ktoré modul existuje: `n_threads` (= `cores_performance`), `n_gpu_layers` (−1/0 podľa backendu) a `backend` (`cuda`/`metal`/`cpu`). **Zásada: detekcia nikdy nevyhodí výnimku von** – zlyhanie sondy sa mení na `Notice` a appka beží na CPU. `required_wheel()` je zvlášť, mimo `check_gpu` – nie je to problém, ale fakt, a hlásiť ho treba až keď llama-cpp-python chýba. Pevné údaje (minimálne verzie OS, mapa compute capability → wheel) sú vo `vars/hw.json`, konštanty v `core/constants.py`.
-3. [ ] `core/settings.py` (LoadParams / SamplingParams) → `core/llm_engine.py`, otestované v konzole (load `.gguf`, streaming, stop) ← **ďalší krok**.
-   Pred tým: nainštalovať llama-cpp-python 0.3.36 (`pip install -r requirements-llama-win-cuda.txt`, 218 MB) a na MacBooku `requirements-llama-mac.txt`.
-   Prvý test má odpovedať na dve neoverené veci: či CUDA wheel podporuje `sm_120` (Blackwell) a či potrebuje CUDA Toolkit. Postup: načítať `gemma-3-4b-it-Q4_K_M.gguf` s `n_gpu_layers=-1` a v `nvidia-smi` overiť, že model naozaj sedí vo VRAM, nie v RAM.
-2. [ ] Minimálne UI: okno, vstup, streamovaná odpoveď cez worker
-3. [ ] SQLite + sidebar s chatmi
-4. [ ] Panel nastavení per chat + výber modelu
-5. [ ] Prílohy (drag & drop, extrakcia, kontrola tokenov)
-6. [ ] Web rozšírenie
-7. [ ] Doladenie: témy, markdown, ikony, PyInstaller
+3. [x] `core/settings.py` (`LoadParams` / `SamplingParams`) + `core/llm_engine.py`, otestované v konzole (2026-10-28, PC 1): load `.gguf`, streaming aj stop fungujú, GPU offload overený (§3). `python -m core.llm_engine [cesta/k/modelu.gguf]`.
+   **Na MacBooku zostáva:** nainštalovať `requirements-llama-mac.txt` a spustiť ten istý konzolový test – Metal wheel ani `_performance_cores_macos()` nie sú overené na reálnom stroji.
+4. [x] `core/paths.py` – jediné miesto, ktoré vie, kde má aplikácia svoje dáta (`app_dir`, `settings_path`, `db_path`, `default_models_dir`, `ensure_dir`). Podrobnosti a dôvody v §7.1.
+5. [~] **Úložisko** (2026-10-28/29). Hotové: `storage/constants.py` (schéma + pragmy + `SCHEMA_VERSION`), `storage/database.py` – trieda `Database` so spojením, pragmami, migráciami cez `PRAGMA user_version` a operáciami nad `models`. Overené konzolovým self-testom: `python -m storage.database`.
+   **Zostáva:** operácie nad `chats`, `content` a `properties` – teda `create_chat`, `list_chats`, `rename_chat`, `delete_chat`, `set_model`, `add_message`, `get_messages`, `get_properties`, `set_properties` a reset parametrov cez `json_remove` pri výmene modelu ← **ďalší krok**.
+6. [ ] `core/context.py` – počítanie tokenov a orezávanie histórie. Engine dáva `tokenize()`, `count_tokens()`, `n_ctx` a `n_ctx_train`, úložisko `content.tokens` per správa.
+7. [ ] `core/app_settings.py` – `settings.json` (`models_dir`, prepínače, téma, posledný model).
+8. [ ] Minimálne UI: okno, vstup, streamovaná odpoveď cez worker (`ui/workers.py` obalí `LlmEngine.stream()`; `request_stop()` je volateľný z UI vlákna) + sidebar s chatmi
+9. [ ] Panel nastavení per chat + výber a import modelu
+10. [ ] Prílohy (drag & drop, extrakcia, kontrola tokenov) – prvá migrácia schémy, `SCHEMA_VERSION` na 2
+11. [ ] Web rozšírenie
+12. [ ] Doladenie: témy, markdown, ikony, PyInstaller
 
 ### Prečo sa začína jadrom, a nie UI ani nastaveniami
 
@@ -197,6 +304,15 @@ Rozhodnuté 2026-10-27, platí ako odpoveď na otázku „UI / core / nastavenia
 
 Jadro sa dá otestovať čistým konzolovým skriptom, takže je hotové a overené skôr, než vznikne prvý widget.
 
+### 8.1 Ako sa na projekte pracuje
+
+Rozhodnuté 2026-10-28, platí pre každú session:
+
+- **Po malých kusoch, nie celé moduly naraz.** Autor chce kódu rozumieť a kontrolovať ho, prípadne písať sám – nie dostať hotový súbor na schválenie. Hotový modul, ktorý nikto neprečítal, je horší než polovica, ktorej autor rozumie.
+- **Návrh pred kódom.** Schéma, názvy a hranice modulov sa dohodnú skôr, než sa píše implementácia. Dôvod je ten istý ako pri „jadro pred UI“ vyššie: čo sa napíše pred dohodou, píše sa druhýkrát.
+- **Vysvetliť *prečo*, nie len *čo*.** Pri rozhodnutí sa uvádza dôvod a zahodená alternatíva – preto má tento súbor aj `SESSIONS.md` takú podobu.
+- **Nekomitovať bez vyžiadania.** Zmeny zostávajú v pracovnom strome, kým autor nepovie.
+
 ## 9. Poznámky k prostrediu
 
 Na PC 1 je shell **PowerShell 5.1**, Claude Code má aj Git Bash. Každé z nich má inú pascu:
@@ -204,6 +320,9 @@ Na PC 1 je shell **PowerShell 5.1**, Claude Code má aj Git Bash. Každé z nich
 - **PowerShell 5.1 nepozná `&&`.** `git add . && git commit -m "x"` skončí na `ParserError`. Správne: `git add .; if ($?) { git commit -m "x" }`, alebo len `a; b`.
 - **Git Bash prerába argumenty začínajúce lomkou na windowsové cesty.** Z `git commit -m "/core - ..."` sa stane predmet `C:/Users/.../hermes/git/core - ...`. Commit správy nikdy nezačínať `/` – písať `core: ...`.
 - **Viacriadkové `heredoc` v Git Bash** sa na slovenských úvodzovkách a apostrofoch rozbíja – dlhé súbory zapisovať priamo, nie cez `cat > file <<EOF`.
+- **`py` je launcher, nie `.venv`.** Na PC 1 je globálny Python **3.14.2** (`%LOCALAPPDATA%\Python\pythoncore-3.14-64`), zafixovaná verzia projektu je 3.12.10 (§3). `py -m pip install ...` ide do `.venv` **iba keď je venv aktivovaný** (vtedy launcher ctí `VIRTUAL_ENV`); bez aktivácie to ticho nainštaluje do 3.14. Isté je `.venv\Scripts\python.exe -m pip ...`. Kam to naozaj šlo, povie `python -c "import sys; print(sys.prefix)"`.
+- **`set NIECO=hodnota` je syntax cmd.exe, v PowerShelli to ticho nič nespraví.** `set` je v PowerShelli alias pre `Set-Variable`, takže `set CMAKE_ARGS=-DGGML_CUDA=on` vyrobí PowerShell premennú s názvom `CMAKE_ARGS=-DGGML_CUDA=on` a hodnotou `$null` – **bez chybového hlásenia**. Environment premenná sa nenastaví a podproces (tu cmake) o ničom nevie. Správne je `$env:CMAKE_ARGS = "-DGGML_CUDA=on"`.
+  *Stalo sa 2026-10-28:* takto postavený `llama-cpp-python` sa skompiloval úspešne, ale **ako CPU-only build** – v `llama_cpp/lib/` chýbala `ggml-cuda.dll`. Build neprotestoval, lebo CUDA jednoducho nebola vyžiadaná. Poučenie: po každom builde zo zdrojákov skontrolovať obsah `llama_cpp/lib/`, nie len to, že `pip install` prešiel.
 
 Git:
 
@@ -227,9 +346,9 @@ Rieši sa až v kroku 7, ale nasledujúce čísla sú overené (2026-10-28) a ov
 |---|---|
 | `cublas64_13.dll` | 49 MB |
 | `cublasLt64_13.dll` | **458 MB** |
-| CUDA wheel llama-cpp-python | ~300 MB |
+| oficiálny CUDA wheel 0.3.36 | 218 MB (z toho `ggml-cuda.dll` 121 MB) |
 
-CUDA wheel **nemá cuBLAS v sebe** – vyžaduje nainštalovaný CUDA Toolkit (§3). Koncový používateľ ho mať nebude, takže ~507 MB CUDA knižníc treba priložiť k appke. NVIDIA redistribúciu týchto DLL povoľuje (CUDA EULA), ale overiť podmienky pred vydaním.
+CUDA wheel **nemá cuBLAS v sebe** – *potvrdené 2026-10-28* zoznamom importov `ggml-cuda.dll`: `cublas64_13.dll`, `nvcuda.dll`, `nvcudart_hybrid64.dll`. Z toho `nvcuda.dll` dodáva ovládač (je na každom stroji s NVIDIA kartou), ale cuBLAS je z Toolkitu. Koncový používateľ Toolkit mať nebude, takže ~507 MB CUDA knižníc treba priložiť k appke. NVIDIA redistribúciu týchto DLL povoľuje (CUDA EULA), ale overiť podmienky pred vydaním.
 
 **Verzie CPU a CUDA wheelov sa neprekrývajú:**
 
@@ -261,13 +380,17 @@ Existujú `cu121`–`cu125` a `cu130`; `cu126`, `cu128`, `cu129` neexistujú.
 4. Menší: 218 MB oproti ~300 MB.
 5. **Existuje aj Metal index**, takže na macOS padá build zo zdrojákov – netreba Xcode Command Line Tools ani cmake.
 
-**Neoverené, zistí sa pri inštalácii:** či wheel obsahuje `sm_120` (Blackwell, PC 1) a či má v sebe cuBLAS, alebo stále vyžaduje CUDA Toolkit. Podpísané GitHub odkazy nepustia HTTP Range, takže zoznam súborov vo wheeli sa bez stiahnutia celých 218 MB zistiť nedá.
+**Overené inštaláciou 2026-10-28:** wheel `sm_120` podporuje, cuBLAS v sebe nemá. Body 3 (nie je per-architektúra) aj 5 sa potvrdili. Detaily a čísla výkonu sú v §3.
 
 **Rozhodnuté:** pin v §3 posunutý z `0.3.20` na `0.3.36`, `requirements-llama-*.txt` prepísané na oficiálne URL. Zdroj `dougeeai` sa už nepoužíva.
 
 ### 10.1b Build zo zdrojákov – čo to je a čo nie je
 
-`CMAKE_ARGS="-DGGML_CUDA=on" pip install llama-cpp-python==0.3.36` **nie je inštalácia, ale kompilácia**. Treba rozlišovať dva nezávislé problémy, ktoré sa pri tom často mieša:
+`CMAKE_ARGS="-DGGML_CUDA=on" pip install llama-cpp-python==0.3.36` **nie je inštalácia, ale kompilácia**.
+
+> **Stav 2026-10-28:** pre vývoj build zo zdrojákov **netreba** – oficiálny wheel na PC 1 funguje aj na `sm_120` (§3). Build zostáva relevantný iba pre problém B nižšie, teda na výrobu vlastnej distribučnej binárky. Pokus o build na PC 1 zlyhal tichým spôsobom (CPU-only), príčina je v §9.
+
+Treba rozlišovať dva nezávislé problémy, ktoré sa pri tom často mieša:
 
 | | problém | čo ho rieši |
 |---|---|---|
