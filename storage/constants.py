@@ -17,13 +17,14 @@ SCHEMA_V1 = ("""
     CREATE TABLE IF NOT EXISTS chats (
         id INTEGER PRIMARY KEY,
         title TEXT NOT NULL,
-        date TEXT NOT NULL DEFAULT (datetime('now')),
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now')),
         model_id INTEGER REFERENCES models(id) ON DELETE SET NULL
     );
     CREATE TABLE IF NOT EXISTS content (
         id INTEGER PRIMARY KEY,
         data TEXT NOT NULL DEFAULT '{}',
-        tokens INT NOT NULL DEFAULT 0,
+        tokens INT,
         role TEXT NOT NULL DEFAULT 'user',
         chat_id INTEGER NOT NULL REFERENCES chats(id) ON DELETE CASCADE
     );

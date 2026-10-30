@@ -1,6 +1,6 @@
 # FUKAI – Almanac
 
-Zdieľaná pamäť projektu pre Claude Code na všetkých strojoch (Mac aj PC). Sem patria rozhodnutia, obmedzenia a kontext, ktorý sa nedá vyčítať z kódu. Pri zmene rozhodnutia prepíš príslušnú sekciu, nepridávaj protichodné záznamy. Posledná revízia: 2026-10-28.
+Zdieľaná pamäť projektu pre Claude Code na všetkých strojoch (Mac aj PC). Sem patria rozhodnutia, obmedzenia a kontext, ktorý sa nedá vyčítať z kódu. Pri zmene rozhodnutia prepíš príslušnú sekciu, nepridávaj protichodné záznamy. Posledná revízia: 2026-10-30.
 
 ## 1. Projekt
 
@@ -15,7 +15,7 @@ Zdieľaná pamäť projektu pre Claude Code na všetkých strojoch (Mac aj PC). 
 1. Chat so streamovanou odpoveďou, tlačidlo Stop.
 2. Ukladanie chatov (zoznam v sidebare, premenovanie, mazanie).
 3. Prílohy: txt/md/csv/json/kód, PDF, xlsx, docx. Bez OCR.
-4. Webové vyhľadávanie ako rozšírenie (prepínač pri správe).
+4. Webové vyhľadávanie ako rozšírenie (prepínač v input riadku, drží sa per chat – §7.2).
 5. Výber `.gguf` modelu a parametre per chat: max tokens, context length, temperature, repeat penalty, top_p/top_k, CPU vs GPU podľa detegovaného HW.
 
 ## 3. Stack (zafixované)
@@ -231,17 +231,14 @@ Hranica: **`vars/` = pevné dáta dodané s kódom, iba na čítanie, v Gite. `u
 
 **Chat vzniká pri prvej správe,** nie pri otvorení prázdneho okna (ako Ollama aj LM Studio). Blank chat je len stav UI – výber modelu a vlastnosti žijú do prvej správy v pamäti. Inak by sa pri každom spustení nazbierali prázdne chaty.
 
-**Pri výmene modelu sa resetujú len parametre závislé od modelu.** Zoznam vlastností chatu mieša dva druhy a tá hranica je tá istá ako `LoadParams` vs `SamplingParams` zo §7:
+**Pri výmene modelu sa resetuje celý `properties.data` na predvolené pre nový model** (rozhodnuté 2026-10-30). Toto **nahrádza** pôvodné rozhodnutie z 2026-10-28, podľa ktorého sa mali zachovať parametre nezávislé od modelu (`temperature`, `top_p`, `top_k`, `repeat_penalty`, `max_tokens`) a `json_remove`-ovať len štyri load-time kľúče. Dôvod zmeny: jednotné a predvídateľné správanie – po výmene modelu je chat v tom istom stave, ako keby vznikol nanovo. Cena, ktorú treba poznať: ručne nastavená `temperature` sa výmenou modelu stratí.
 
-- *závislé od modelu* – `n_ctx`, `n_gpu_layers`, `n_threads`, `n_batch`. Iný model má iný `n_ctx_train` aj iný počet vrstiev, takže hodnota z predchádzajúceho modelu je neplatná.
-- *nezávislé* – `temperature`, `top_p`, `top_k`, `repeat_penalty`, `max_tokens`. Keď si používateľ nastavil `temperature=0.3`, výmena modelu to nemá zahodiť.
+Hranica *závislé / nezávislé od modelu* ostáva platná ako pojem (je to tá istá hranica ako `LoadParams` vs `SamplingParams` zo §7) – len sa už nepoužíva na výber toho, čo pri výmene prežije:
 
-Aby to bolo implementovateľné, schéma musí rozlíšiť **„používateľ to nastavil“ od „to je predvolená hodnota“**. Realizované ako `properties.data` – JSON, kde **chýbajúci kľúč** = „použi predvolené pre aktuálny model“ a prítomný = „nastavené ručne“. Výmena modelu je potom jediný príkaz, nie rozhodovacia logika:
+- *závislé od modelu* – `n_ctx`, `n_gpu_layers`, `n_threads`, `n_threads_batch`, `n_batch`, `n_ubatch`. Iný model má iný `n_ctx_train` aj iný počet vrstiev, takže hodnota z predchádzajúceho modelu je neplatná.
+- *nezávislé* – sampling parametre a `system_prompt`.
 
-```sql
-UPDATE properties SET data = json_remove(data, '$.n_ctx', '$.n_gpu_layers', '$.n_threads', '$.n_batch')
-WHERE chat_id = ?;
-```
+Tým **padá dôvod rozlišovať „používateľ to nastavil“ od „to je predvolená hodnota“** cez chýbajúci kľúč, aj `json_remove` v `set_model`. Ten teraz zapíše celý nový blob. Zostáva platiť, že `set_model` je **jedna transakcia** nad tromi vecami: `chats.model_id`, `properties.data` a vynulovanie `content.tokens` (§7.2).
 
 **Prečo JSON a nie typované stĺpce** (rozhodnuté 2026-10-28): parametrov bude s každým novým sliderom v krokoch 9–11 pribúdať a JSON nevyžaduje migráciu schémy pri každom z nich. Cena je, že schéma už nehovorí, čo sa dá nastaviť – ten kontrakt žije v `core/settings.py` (`LoadParams`, `SamplingParams`).
 
@@ -255,12 +252,61 @@ Hranica, podľa ktorej sa to delí a platí aj pre `models.meta` a `content.data
 - **Prílohy sa ukladajú ako extrahovaný text,** nie ako originálny súbor – do promptu ide text, originál by databázu nafúkol bez úžitku.
 - **Verziovanie schémy cez `PRAGMA user_version`,** nie vlastnou tabuľkou.
 - **`PRAGMA foreign_keys = ON` sa nastavuje pri každom pripojení.** Bez toho cudzie kľúče *ticho* nefungujú a `ON DELETE CASCADE` sa nikdy nevykoná.
-- **`messages.token_count` je cache závislá od modelu** – pri výmene modelu sa musí vynulovať, inak orezávanie histórie počíta cudzím tokenizérom.
+- **`content.tokens` je cache závislá od modelu** – pri výmene modelu sa musí vynulovať, inak orezávanie histórie počíta cudzím tokenizérom. Slúži zároveň ako signál „treba pretokenizovať“ (§7.2).
 - **`chats.model_id` má `ON DELETE SET NULL`** – zmazanie modelu nezmaže chaty, história je text a dá sa čítať aj bez modelu.
 
 **Konkrétna schéma tabuliek je zatiaľ len návrh, neschválená.**
 
-### 7.2 SQLite – pasce overené 2026-10-28/29
+### 7.2 Vlastnosti chatu – obsah, tok a UI (rozhodnuté 2026-10-30)
+
+**Do `properties.data` ide len to, čo UI vie nastaviť.** Zvažovalo sa uložiť do každého chatu *všetky* parametre, ktoré llama-cpp-python prijíma (~50), aj tie, ktoré sa meniť nebudú dať. **Zamietnuté** z troch dôvodov, prvé dva overené na nainštalovanej 0.3.36:
+
+- **Tri z nich nie sú dáta, ale Python objekty** a do JSON-u sa uložiť nedajú vôbec: `grammar` je `LlamaGrammar`, `logits_processor` je `LogitsProcessorList` (zoznam volateľných), `chat_handler` je funkcia.
+- **`logit_bias` sa cestou cez JSON ticho pokazí.** Je to `Dict[int, float]`, ale JSON má kľúče vždy textové: `{15043: -1.5}` sa prečíta ako `{'15043': -1.5}`. Ak sa niekedy bude ukladať, potrebuje vlastný prevod tam aj späť.
+- **Nič sa tým nezíska.** JSON blob bol zvolený práve preto, že pridanie kľúča nevyžaduje migráciu (§7.1) – predvyplnenie kľúčov teda nepridáva flexibilitu, len zavádza: každý kľúč je sľub, že ho niečo číta.
+
+Mimo rozsahu úplne: `tools`, `tool_choice`, `functions`, `function_call` – §7 tool-calling zamieta.
+
+Overené 2026-10-30: v 0.3.36 **existujú všetky** parametre z pôvodného zoznamu, aj `tfs_z`, `typical_p`, `mirostat_*`. Domnienka, že časť bola z llama.cpp odstránená, neplatí – obmedzenie je dané rozsahom UI, nie knižnicou.
+
+**Tri skupiny v `properties.data`**, nie dve. Okrem `LoadParams` / `SamplingParams` zo §7 je tretia skupina vlastností chatu, ktoré nie sú ani jedno:
+
+- `web_search` – prepínač v input riadku, **drží sa per chat** (sticky), nie per správu. Globálne povolenie je nastavenie aplikácie, toto je „použiť v tomto chate“. Mení §2, kde bolo pôvodne „prepínač pri správe“.
+- `system_prompt` – §5 bod 9 ho má ako chybu prototypu (zadrôtovaný v kóde), patrí sem.
+
+**Či sa web search pri konkrétnej odpovedi naozaj použil, sa zapisuje do `content.data` tej správy.** `properties` hovoria, ako je prepínač nastavený *teraz*; prepis chatu musí povedať, ako vznikla *tamtá* odpoveď – inak sa po vypnutí prepínača nedá zistiť, ktoré staré odpovede mali zdroje.
+
+**„Model bol vymenený“ sa neukladá ako príznak.** Zvažované, zamietnuté: príznak, ktorý musí spotrebiteľ po použití zmazať, je zdroj zaseknutého stavu (kto ho vypne, čo pri páde appky). Signál už existuje a čistí sa sám – `set_model` nuluje `content.tokens`, takže **správa bez tokenov = treba pretokenizovať aktuálnym modelom**. Preto má byť `content.tokens` `NULL`-ovateľný: nula je legitímna hodnota a splývala by s „neviem“.
+
+**Zmena `n_ctx` správy nemaže.** Orezáva sa to, **čo ide do promptu**, nie to, čo je v databáze (§7). Po zväčšení kontextu sa staršie správy do promptu vrátia. Je to úloha `core/context.py` (krok 6), úložisko sa pri tom nemení.
+
+**Tok v UI:**
+
+1. Appka sa otvorí s prázdnym chatom. Používateľ **najprv vyberá model** – tlačidlo s názvom aktuálneho modelu rozbalí zoznam s možnosťou importovať nový a mazať jednotlivé.
+2. Po výbere modelu beží indikátor inicializácie (§3: prvé načítanie môže trvať desiatky sekúnd).
+3. Chatovať sa dá hneď s predvolenými vlastnosťami pre daný model.
+4. Zmena **sampling** parametra alebo `web_search` sa zapíše a platí od nasledujúceho generovania.
+5. Zmena **load-time** parametra sa zapíše, ale vyžaduje reload modelu.
+6. **Karta vlastností je počas generovania uzamknutá.**
+
+**Easy mode / expert mode.** Easy mode: názov modelu, slider `n_ctx`, slider `n_gpu_layers` (rozdelenie vrstiev CPU/GPU), `temperature`, plus ukazovateľ „potrebná RAM vs dostupná“. Expert mode = easy + ďalšie parametre, konkrétny výber zatiaľ **neurčený**.
+
+Dve veci, ktoré z toho vyplývajú:
+
+- **Aj v easy mode zostáva tlačidlo „Použiť a reloadnúť“** (§7). Dva z troch slidrov easy mode sú load-time, takže bez neho by začiatočník posunutím slidera spustil desiatky sekúnd dlhý reload. Slider mení len číslo, reload si vypýta kliknutie. `temperature` sa aplikuje hneď.
+- **Ukazovateľ RAM musí merať nanovo.** `ram_available_mb` z `HardwareProfile` je odmeraný raz pri `detect()` (§4), na živý ukazovateľ je už neplatný.
+
+**Nastavenia aplikácie sú pre verziu 1 len prepínače:** téma, povoliť prílohy, povoliť web search, prípadne ďalšie UI. „Povoliť“ znamená, že sa v input riadku chatu *zobrazí* tlačidlo – samotné použitie je potom vlastnosť chatu.
+
+**Kontrakt pre `core/settings.py`** (dohodnuté 2026-10-30, implementácia je krok 6). Blob má tvar `{"load": {...}, "sampling": {...}, "chat": {...}}`. Skupiny sa volajú takto zámerne – `load-time` by v SQLite fungovalo (`$.load-time.n_ctx` sa vyhodnotí správne), ale v Pythone to nie je platný identifikátor. Čo modul musí vedieť:
+
+- **`defaults_for(model, hardware)`** – zostaviť blob pre nový model. Toto je presne to, čo `Database.create_chat()` a `set_model()` berú ako `properties` a dnes im to nemá kto dať.
+- **`from_dict` / `to_dict`** – prevod na a z `properties.data`.
+- **`needs_reload(other)`** – porovnanie podstromu `load`. Toto je ten konkrétny zisk, kvôli ktorému sú skupiny vnorené a nie ploché: UI po uložení potrebuje vedieť, či stačí ďalšie generovanie, alebo nabehne reinicializácia modelu.
+
+**`model_path` sa do `properties.load` neukladá.** `LoadParams.to_dict()` ho dnes vracia, lebo vzniklo na prípravu argumentov pre `Llama(...)`. Do úložiska ísť nesmie: §7.1 drží `models.filename` relatívne k `models_dir` práve preto, aby presun knižnice modelov nerozbil databázu, a absolútna cesta zapísaná do vlastností každého chatu by to zrušila. Ktorý model chat používa, hovorí `chats.model_id`; cesta sa dopočíta až pri načítaní. **Dôsledok: „slovník pre úložisko“ a „slovník pre konštruktor `Llama`“ nie sú to isté volanie** a treba ich rozlíšiť.
+
+### 7.3 SQLite – pasce overené 2026-10-28/29
 
 Všetky nižšie sú overené spustením, nie prečítané v dokumentácii. Spoločná vlastnosť: **ani jedna nevyhodí chybu v momente, keď ju spravíš.**
 
@@ -275,6 +321,26 @@ Všetky nižšie sú overené spustením, nie prečítané v dokumentácii. Spol
 - **Cudzie kľúče sa neindexujú samy.** SQLite indexuje automaticky len `PRIMARY KEY` a `UNIQUE`, preto `CREATE INDEX idx_content_chat ON content(chat_id)` – načítanie chatu je `WHERE chat_id = ?` a je to najčastejší dotaz aplikácie.
 - **`str(dict)` sa do JSON stĺpca uložiť *dá*** – SQLite od 3.42 vie JSON5, takže `json_extract` zvládne aj jednoduché úvodzovky. Ale `json.loads()` v Pythone ich neprijme, takže by si to zapísal a už neprečítal. Prevod `dict` ↔ JSON robí `storage/database.py`, nie volajúci.
 - **WAL súbory `-wal` a `-shm`** vzniknú počas behu a pri korektnom zatvorení sa zlúčia a zmažú. Keď tam zostanú, appka buď beží, alebo predtým spadla. Pri zálohovaní patria k databáze.
+- **`(x)` nie je n-tica, `(x,)` áno.** `conn.execute(sql, (chat_id))` pošle `int` namiesto sekvencie → `ProgrammingError: parameters are of unsupported type`. Pri jednom parametri je chýbajúca čiarka najčastejšia chyba v celom module.
+- **`json_remove` a spol. berú cesty ako parametre** – `json_remove(data, ?, ?)` s `'$.n_ctx'` funguje, f-string na hodnoty netreba (na rozdiel od `PRAGMA`, ktorá parametre neprijíma). Odstránenie neexistujúceho kľúča je neškodné.
+- **Spojovník v JSON ceste SQLite nevadí** – `$.load-time.n_ctx` sa vyhodnotí správne. Prekáža až v Pythone, kde `load-time` nie je platný identifikátor; preto sa skupiny v `properties.data` volajú `load`, `sampling`, `chat` (§7.2).
+
+### 7.4 Transakcie nad viacerými príkazmi – overené 2026-10-29/30
+
+`create_chat`, `add_message` a `set_model` potrebujú viac príkazov naraz, ale `Database.execute()` je **jedna transakcia na volanie**. Dva `execute()` za sebou teda nie sú atomické – overené: po zlyhaní druhého INSERT-u zostal v databáze chat bez riadku v `properties`.
+
+**Zamietnuté: `execute_many(statements)`** so zoznamom `(sql, params)`. Nestačí – `create_chat` potrebuje `lastrowid` prvého INSERT-u ako *parameter* druhého, čo plochý zoznam nevie vyjadriť. Nie je to zoznam príkazov, ale blok kódu.
+
+**Riešenie: `Database.transaction()`**, kontextový manažér, ktorý vydá spojenie. `execute()` je cezeň prepísaný, takže zámok aj preklad chýb na `StorageError` žijú na jednom mieste.
+
+Dve pasce, pre ktoré sa to nedá riešiť vnorením – obe overené spustením:
+
+- **Vnorené `with conn:` commitne skôr.** `sqlite3` vnorené transakcie nemá; každé `with conn:` je commit na výstupe. Pri pokuse A → (B) → C s výnimkou na konci zostali v tabuľke `['A', 'B']` namiesto `[]`. Vnútorné `with` commitlo aj vonkajšiu prácu a rollback zrušil len `C`.
+- **`threading.Lock` nie je reentrantný.** `self.execute()` vnútri bloku, ktorý už drží `self._lock`, zamrzne.
+
+**Zámok zostáva `threading.Lock`, nie `RLock`** – zámerne. S `RLock` by vnorenie prešlo a dostal by si tichý predčasný commit z prvého bodu. Takto to zasekne hneď pri vývoji; hlučná chyba je lepšia než tichá.
+
+Platí teda pravidlo: **vnútri `transaction()` sa volá `conn.execute()`, nikdy `self.execute()`.**
 
 ## 8. Poradie práce a stav
 
@@ -284,15 +350,18 @@ Všetky nižšie sú overené spustením, nie prečítané v dokumentácii. Spol
 3. [x] `core/settings.py` (`LoadParams` / `SamplingParams`) + `core/llm_engine.py`, otestované v konzole (2026-10-28, PC 1): load `.gguf`, streaming aj stop fungujú, GPU offload overený (§3). `python -m core.llm_engine [cesta/k/modelu.gguf]`.
    **Na MacBooku zostáva:** nainštalovať `requirements-llama-mac.txt` a spustiť ten istý konzolový test – Metal wheel ani `_performance_cores_macos()` nie sú overené na reálnom stroji.
 4. [x] `core/paths.py` – jediné miesto, ktoré vie, kde má aplikácia svoje dáta (`app_dir`, `settings_path`, `db_path`, `default_models_dir`, `ensure_dir`). Podrobnosti a dôvody v §7.1.
-5. [~] **Úložisko** (2026-10-28/29). Hotové: `storage/constants.py` (schéma + pragmy + `SCHEMA_VERSION`), `storage/database.py` – trieda `Database` so spojením, pragmami, migráciami cez `PRAGMA user_version` a operáciami nad `models`. Overené konzolovým self-testom: `python -m storage.database`.
-   **Zostáva:** operácie nad `chats`, `content` a `properties` – teda `create_chat`, `list_chats`, `rename_chat`, `delete_chat`, `set_model`, `add_message`, `get_messages`, `get_properties`, `set_properties` a reset parametrov cez `json_remove` pri výmene modelu ← **ďalší krok**.
-6. [ ] `core/context.py` – počítanie tokenov a orezávanie histórie. Engine dáva `tokenize()`, `count_tokens()`, `n_ctx` a `n_ctx_train`, úložisko `content.tokens` per správa.
-7. [ ] `core/app_settings.py` – `settings.json` (`models_dir`, prepínače, téma, posledný model).
-8. [ ] Minimálne UI: okno, vstup, streamovaná odpoveď cez worker (`ui/workers.py` obalí `LlmEngine.stream()`; `request_stop()` je volateľný z UI vlákna) + sidebar s chatmi
-9. [ ] Panel nastavení per chat + výber a import modelu
-10. [ ] Prílohy (drag & drop, extrakcia, kontrola tokenov) – prvá migrácia schémy, `SCHEMA_VERSION` na 2
-11. [ ] Web rozšírenie
-12. [ ] Doladenie: témy, markdown, ikony, PyInstaller
+5. [x] **Úložisko** (2026-10-28/30). `storage/constants.py` (schéma + pragmy + `SCHEMA_VERSION`) a `storage/database.py` – trieda `Database` so spojením, pragmami, migráciami cez `PRAGMA user_version` a operáciami nad `models`, `chats`, `content` aj `properties`. Overené konzolovým self-testom: `python -m storage.database` – pokrýva aj atomicitu, `ON DELETE CASCADE` a `SET NULL`.
+   Kľúčový primitív je **`Database.transaction()`** – kontextový manažér, ktorý vydá spojenie a celý blok commitne alebo rollbackne. Existuje preto, že `create_chat`, `add_message` a `set_model` potrebujú viac príkazov naraz a `execute()` je jedna transakcia na volanie. **Vnútri `transaction()` sa volá `conn.execute()`, nikdy `self.execute()`** – to druhé zamrzne na `self._lock`. Overené 2026-10-29/30, pozri §7.4.
+6. [ ] **`core/settings.py` – vlastnosti chatu** ← **ďalší krok** (autor píše sám od nuly, 2026-10-30). Prepojí `storage/` s `llm_engine`. Kontrakt v §7.2; `LoadParams` a `SamplingParams` už obsahujú presne schválené polia, chýba tretia skupina a obal nad nimi.
+   *Poradie zmenené 2026-10-30:* pôvodne bol 6. `context.py` a 7. `app_settings.py`. Dôvod: `create_chat` aj `set_model` berú `properties: dict` zvonku a **dnes ho nemá kto zostaviť**, takže hotové úložisko sa nedá použiť. `context.py` navyše potrebuje bežiaci engine, takže ide až potom.
+7. [ ] `core/app_settings.py` – `settings.json` (`models_dir`, prepínače, téma, posledný model). Malý a nezávislý; pozor, je to **iné úložisko než vlastnosti chatu** (§7.1).
+8. [ ] `core/context.py` – počítanie tokenov a orezávanie histórie. Engine dáva `tokenize()`, `count_tokens()`, `n_ctx` a `n_ctx_train`, úložisko `content.tokens` per správa. Orezáva sa **to, čo ide do promptu**, nie to, čo je v databáze (§7.2). Pozor na `content_tokens()`: vracia `0` pri prázdnom chate aj pri samých `NULL` tokenoch, čo sú pre tento modul dve rôzne veci.
+9. [ ] Minimálne UI: okno, vstup, streamovaná odpoveď cez worker (`ui/workers.py` obalí `LlmEngine.stream()`; `request_stop()` je volateľný z UI vlákna) + sidebar s chatmi
+10. [ ] **Čítač hlavičky `.gguf`, ktorý nenačíta model** – prerekvizita importu modelu. *Overené 2026-10-30:* `n_layers` aj `n_ctx_train` v `llm_engine.py` idú cez `self._llm._model.model`, teda sú dostupné **až po `load()`**. Popup so zoznamom modelov a rozsahy slidrov ich ale potrebujú **pred** načítaním, preto sa čítajú raz pri importe a cachujú v `models.meta` (§7.1). Pri vytváraní chatu to nevadí – model vtedy už beží.
+11. [ ] Panel nastavení per chat + výber a import modelu
+12. [ ] Prílohy (drag & drop, extrakcia, kontrola tokenov) – prvá migrácia schémy, `SCHEMA_VERSION` na 2
+13. [ ] Web rozšírenie
+14. [ ] Doladenie: témy, markdown, ikony, PyInstaller
 
 ### Prečo sa začína jadrom, a nie UI ani nastaveniami
 
