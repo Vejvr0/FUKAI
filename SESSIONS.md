@@ -198,3 +198,43 @@ Tri z piatich metód nad `models` padli pri prvom zavolaní, hoci „to prešlo�
 4. **`SELECT *` v `list_models` a `get_model`** – pri zmene schémy sa ticho zmenia kľúče v `dict`-och, ktoré očakáva UI. Vypísať stĺpce namenovito.
 5. **Čítanie metadát `.gguf` bez načítania modelu** – teraz už nutnosť, nie bonus: import ich musí zapísať do `models.meta` a popup aj panel vlastností ich potrebujú pred `load()`.
 6. Body 3–7 z predchádzajúcej session stále platia.
+
+---
+
+## 2026-10-30 – MacBook: settings pre engine, Metal build, engine od nuly
+
+**Stav na začiatku:** prvá session na MacBooku po práci na PC 1. Repo aktuálne s `origin/main` (`fd59ca9`), `core/settings.py` len kostry dataclass, na Macu chýbal llama-cpp-python aj model.
+
+### Hotové
+
+**`core/settings.py` – časť pre engine.** Autor písal sám po kúskoch, Claude kontroloval a vysvetľoval. Poradie: oprava kostry → `for_hardware()` → `_clamp` + `clamped()` (obe triedy) → `validate()` → `model_size_mb` + `on_gpu` → `__post_init__`. Každý kúsok overený jednoriadkovým `python -c` testom pred ďalším.
+
+**llama-cpp-python 0.3.36 Metal na M2 – build zo zdrojákov.** Oficiálny Metal wheel 0.3.36 je na GitHube poškodený (`Bad CRC-32` v `lib/cmake/ggml/ggml-config.cmake`). Postup diagnostiky: `--no-cache-dir` nepomohol → samostatné stiahnutie, SHA-256 sa zhoduje s digestom z GitHub API → `python -m zipfile -t` potvrdil poškodený súbor priamo vo wheeli → 0.3.35-metal je v poriadku. Zvolený build 0.3.36 zo zdrojákov namiesto 0.3.35, lebo **verzia musí byť na Macu aj PC rovnaká**. `requirements-llama-mac.txt` prepísaný na build.
+
+**`core/llm_engine.py` od nuly – kúsky 1 a 2** (kostra, `load()` / `unload()`). Návrh rozhrania a poradie 8 kúskov dohodnuté pred kódom (ALMANAC §8 krok 3). Overené na M2: Gemma 3 4B cez Metal, `n_gpu_layers=-1`, `n_threads=4`.
+
+### Opravené chyby (a prečo stáli za zmienku)
+
+| Chyba | Prečo bola zradná |
+|---|---|
+| `STOP_DEFAULT = tuple(str, ...)` | typ vs. hodnota; padá už pri importe `constants.py` |
+| `HardwareProfile.n_gpu_layers()` v predvolenej hodnote poľa | property volaná na triede; a aj keby fungovala, detekcia HW pri každom importe |
+| `stop: tuple[str, ...]` bez `= STOP_DEFAULT` | pole bez predvolenej hodnoty za poľami s ňou → `non-default argument follows default argument` |
+| `replace(` bez `self` | `missing 1 required positional argument: 'obj'` |
+| `_clamp(self.seed, ...)` pri `seed=None` | padlo by pri **každej** správe, `None` je predvolený seed |
+| `LoadParams("x.gguf")` → `model_path` ostal `str` | prevod bol len v `for_hardware`/`clamped`; vyriešené `__post_init__` |
+| `import_llama` bez podčiarkovníka | test hľadal `_import_llama`; interné funkcie majú `_` |
+| `self.verbose = verbose,` | n-tica `(False,)` je pravdivá → plný log llama.cpp, bez chyby |
+| `LoadParams().model_path` v `load()` | šesť nových prázdnych inštancií namiesto parametrov od volajúceho |
+| `for_hardware(cls, hw)` bez `model_path` a `n_ctx` | `model_path` je povinné pole – `LoadParams` bez modelu nedáva zmysel |
+
+### Otázka, ktorá stojí za zápis
+
+„Netreba pri vypnutí appky vypnúť backend, aby sa uvoľnila RAM?“ – Nie. Backend sa inicializuje raz pri prvom `Llama(...)` a knižnica ho neuvoľňuje; pamäť po procese uvoľní OS. Pamäť drží **model** a ten sa uvoľňuje pri výmene modelu (inak dva naraz) a pri zatvorení okna – tam ide o **poradie** (stop → počkať na worker → unload), nie o RAM. Podrobne v ALMANAC §8 krok 3.
+
+### Nedoriešené do ďalšej session
+
+1. **Engine kúsky 3–8:** údaje o modeli, `tokenize`/`count_tokens`, `stream()`, `request_stop()`, varovania o pamäti + preklad chýb, `__main__` test.
+2. **Varovanie o pamäti na Metale** – `on_gpu` ho nesmie vypnúť pri zdieľanej pamäti ani čiastočnom offloade (ALMANAC §8 krok 3, „Otvorené“).
+3. **`settings.py` – časť pre úložisko:** `to_dict`/`from_dict`, obal s `defaults_for()` a `needs_reload()`.
+4. Všetko z tejto session je **necommitnuté**.
