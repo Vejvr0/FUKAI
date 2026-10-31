@@ -129,6 +129,44 @@ def _performance_cores(cores_physical: int) -> int:
     return cores_physical
 
 
+def _free_ram_mb_macos() -> int | None:
+    try:
+        done = subprocess.run(
+            ["vm_stat"], capture_output=True, text=True, timeout=5, check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+
+    page_size = 16384
+    pages: dict[str, int] = {}
+    for line in done.stdout.splitlines():
+        if "page size of" in line:
+            page_size = int(line.split("page size of")[1].split()[0])
+            continue
+        key, sep, value = line.partition(":")
+        value = value.strip().rstrip(".")
+        if sep and value.isdigit():
+            pages[key.strip()] = int(value)
+
+    try:
+        held = (pages["Anonymous pages"] - pages["Pages purgeable"]
+                + pages["Pages wired down"] + pages["Pages occupied by compressor"])
+    except KeyError:
+        return None
+    return max(0, psutil.virtual_memory().total - held * page_size) // 1024 // 1024
+
+
+def free_ram_mb() -> int:
+    if platform.system() == "Darwin":
+        try:
+            found = _free_ram_mb_macos()
+        except Exception:
+            found = None
+        if found is not None:
+            return found
+    return psutil.virtual_memory().available // 1024 // 1024
+
+
 def _probe_nvidia() -> GpuInfo | None:
     if shutil.which("nvidia-smi") is None:
         return None
@@ -214,7 +252,7 @@ def detect() -> HardwareProfile:
         cores_logical=psutil.cpu_count(logical=True),
         cores_performance=_performance_cores(cores_physical),
         ram_total_mb=ram.total // 1024 // 1024,
-        ram_available_mb=ram.available // 1024 // 1024,
+        ram_available_mb=free_ram_mb(),
     )
 
 

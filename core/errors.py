@@ -17,7 +17,6 @@ __all__ = [
     "InsufficientMemoryError",
     "GenerationError",
     "ContextOverflowError",
-    "GenerationStopped",
     "StorageError",
     "AttachmentError",
     "UnsupportedAttachmentError",
@@ -172,10 +171,6 @@ class GenerationError(FukaiError):
 class ContextOverflowError(GenerationError):
     default_message = "Správa je príliš dlhá na nastavenú dĺžku kontextu."
     default_hint = "Skrať správu, odober prílohu, alebo zväčši dĺžku kontextu."
-
-
-class GenerationStopped(Exception):
-    """Generovanie bolo zastavené používateľom."""
 
 
 # --- Úložisko --------------------------------------------------------------

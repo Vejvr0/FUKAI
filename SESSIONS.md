@@ -211,7 +211,7 @@ Tri z piatich metód nad `models` padli pri prvom zavolaní, hoci „to prešlo�
 
 **llama-cpp-python 0.3.36 Metal na M2 – build zo zdrojákov.** Oficiálny Metal wheel 0.3.36 je na GitHube poškodený (`Bad CRC-32` v `lib/cmake/ggml/ggml-config.cmake`). Postup diagnostiky: `--no-cache-dir` nepomohol → samostatné stiahnutie, SHA-256 sa zhoduje s digestom z GitHub API → `python -m zipfile -t` potvrdil poškodený súbor priamo vo wheeli → 0.3.35-metal je v poriadku. Zvolený build 0.3.36 zo zdrojákov namiesto 0.3.35, lebo **verzia musí byť na Macu aj PC rovnaká**. `requirements-llama-mac.txt` prepísaný na build.
 
-**`core/llm_engine.py` od nuly – kúsky 1 a 2** (kostra, `load()` / `unload()`). Návrh rozhrania a poradie 8 kúskov dohodnuté pred kódom (ALMANAC §8 krok 3). Overené na M2: Gemma 3 4B cez Metal, `n_gpu_layers=-1`, `n_threads=4`.
+**`core/llm_engine.py` od nuly – kúsky 1 až 3** (kostra, `load()` / `unload()`, údaje o modeli). Návrh rozhrania a poradie 8 kúskov dohodnuté pred kódom (ALMANAC §8 krok 3). Overené na M2: Gemma 3 4B cez Metal, `n_gpu_layers=-1`, `n_threads=4`.
 
 ### Opravené chyby (a prečo stáli za zmienku)
 
@@ -227,6 +227,7 @@ Tri z piatich metód nad `models` padli pri prvom zavolaní, hoci „to prešlo�
 | `self.verbose = verbose,` | n-tica `(False,)` je pravdivá → plný log llama.cpp, bez chyby |
 | `LoadParams().model_path` v `load()` | šesť nových prázdnych inštancií namiesto parametrov od volajúceho |
 | `for_hardware(cls, hw)` bez `model_path` a `n_ctx` | `model_path` je povinné pole – `LoadParams` bez modelu nedáva zmysel |
+| `_meta_int("context-length")` – **neopravené** | spojovník namiesto `_`; bezpečné `None` pri chýbajúcom kľúči preklep ticho zakrylo – test dal `n_ctx_train=None` |
 
 ### Otázka, ktorá stojí za zápis
 
@@ -234,7 +235,47 @@ Tri z piatich metód nad `models` padli pri prvom zavolaní, hoci „to prešlo�
 
 ### Nedoriešené do ďalšej session
 
-1. **Engine kúsky 3–8:** údaje o modeli, `tokenize`/`count_tokens`, `stream()`, `request_stop()`, varovania o pamäti + preklad chýb, `__main__` test.
-2. **Varovanie o pamäti na Metale** – `on_gpu` ho nesmie vypnúť pri zdieľanej pamäti ani čiastočnom offloade (ALMANAC §8 krok 3, „Otvorené“).
-3. **`settings.py` – časť pre úložisko:** `to_dict`/`from_dict`, obal s `defaults_for()` a `needs_reload()`.
-4. Všetko z tejto session je **necommitnuté**.
+1. **Opraviť `context-length` → `context_length`** v `n_ctx_train` a znova spustiť test kúsku 3 (má dať `2048 131072 34 35`).
+2. **Engine kúsky 4–8:** `tokenize`/`count_tokens`, `stream()`, `request_stop()`, varovania o pamäti + preklad chýb, `__main__` test.
+3. **Varovanie o pamäti na Metale** – `on_gpu` ho nesmie vypnúť pri zdieľanej pamäti ani čiastočnom offloade (ALMANAC §8 krok 3, „Otvorené“).
+4. **`settings.py` – časť pre úložisko:** `to_dict`/`from_dict`, obal s `defaults_for()` a `needs_reload()`.
+5. Všetko z tejto session je **necommitnuté**.
+
+## 2026-10-31 – MacBook: llm_engine.py dokončený (kúsky 3–8)
+
+**Stav na začiatku:** kúsky 1–3 enginu hotové, v `n_ctx_train` preklep `context-length`. Všetko z 2026-10-30 necommitnuté.
+
+### Hotové
+
+**`core/llm_engine.py` – kúsky 4 až 8, engine je kompletný.** Kúsky 4–5 písal autor (Claude navrhol a opravil), kúsky 6–8 napísal Claude na žiadosť autora. Každý overený na Gemme 3 4B cez Metal; rozhodnutia a zahodené alternatívy sú v ALMANAC §8 krok 3.
+
+- **4 `tokenize`/`count_tokens`** – `add_bos=False`, `special=False`, bez zámku.
+- **5 `stream()`** – generátor `Iterator[str]`, celé generovanie pod `_lock`, `ValueError` „exceed context window“ → `ContextOverflowError`.
+- **6 `request_stop()` + `finish_reason`** – `threading.Event`, `FinishReason(Enum)` `DONE`/`LENGTH`/`STOPPED`. Stop z iného vlákna zaberie do ~0,1 s.
+- **7 pamäť** – `load()` vracia `list[Notice]`, preklad chýb podľa fázy načítania, nové `hardware.free_ram_mb()`.
+- **8 `__main__`** – `python -m core.llm_engine [model.gguf] [n_ctx]`.
+
+**Overenie na druhom modeli** – Qwen 2.5 1.5B Q4_0: engine bez zmeny funguje (iná architektúra, bez BOS, iný EOS, `n_layers + 1` platí). Porovnávací skript ostal mimo repa.
+
+**Rozhodnutie o Stope:** vráti sa celý ťah – zahodí sa čiastočná odpoveď aj otázka, text otázky sa vráti do vstupu (ALMANAC §8 krok 3, realizácia v kroku 9). `GenerationStopped` z `errors.py` zmazaná.
+
+### Zistenia, ktoré stoja za zápis
+
+| Zistenie | Prečo bolo zradné |
+|---|---|
+| `add_bos=True` v `tokenize` | nič nespadne, len každá správa +1 token – chyba rastie s dĺžkou chatu |
+| `llm = self._llm` v akcii namiesto `_require_loaded()` | vzor z vlastností; bez modelu `AttributeError: 'NoneType'` namiesto `ModelLoadError` |
+| `message=` namiesto `messages=` pri volaní knižnice | ľavá strana `názov=hodnota` patrí knižnici, nie nám |
+| knižnica ticho skráti `max_tokens`, keď `prompt + max_tokens > n_ctx` | odpoveď sa utne bez hlásenia → preto `FinishReason.LENGTH` |
+| `generator.close()` z iného vlákna | `ValueError: generator already executing` → stop musí byť príznak |
+| Gemma template padá pri user, user | Qwen nie – na jednom modeli by sa to neukázalo; viedlo k rozhodnutiu o Stope |
+| prázdny system prompt ≠ žiadny (Qwen) | bez system správy si Qwen doplní vlastnú |
+| výnimka knižnice pri OOM je len `Failed to create llama_context` | starý engine hľadal „out of memory“ v texte → `InsufficientMemoryError` bol mŕtvy kód |
+| `psutil.available` na macOS | nezapočíta súborovú cache (váhy cez mmap) → falošné varovanie pri každom načítaní |
+
+### Nedoriešené do ďalšej session
+
+1. **Na PC 1 spustiť `python -m core.llm_engine`** – overiť CUDA vetvu `_memory_pool` (VRAM), offload a rýchlosť; ideálne aj s Mistral 7B.
+2. **`settings.py` – časť pre úložisko:** `to_dict`/`from_dict`, obal s `defaults_for()` a `needs_reload()` (krok 6).
+3. Odhad pamäte bez KV cache – doplniť s čítačom hlavičky `.gguf` (krok 10).
+4. Neoverené modely: Llama 3 (`strftime_now`), Qwen 3 (`<think>`).
