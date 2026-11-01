@@ -320,6 +320,46 @@ Tri z piatich metód nad `models` padli pri prvom zavolaní, hoci „to prešlo�
 
 ### Nedoriešené do ďalšej session
 
-1. **Krok 8 – `core/context.py`** (počítanie tokenov, orezávanie histórie). Engine dáva `tokenize()`, `count_tokens()`, `n_ctx`; úložisko `content.tokens`. Orezáva sa to, čo ide do promptu, nie databáza (§7.2). Pozor na striedanie rolí user/assistant (Gemma template padne na user, user) a na `content_tokens()`, ktoré vracia `0` aj pri samých `NULL`.
-2. Odhad pamäte bez KV cache – doplniť s čítačom hlavičky `.gguf` (krok 10), teraz už je známa aj veľkosť na token.
+1. Odhad pamäte bez KV cache – doplniť s čítačom hlavičky `.gguf` (krok 10), teraz už je známa aj veľkosť na token.
+2. Neoverené modely: Llama 3 (`strftime_now`), Qwen 3 (`<think>`).
+
+## 2026-11-02 – PC 1: `context.py` (krok 8)
+
+**Stav na začiatku:** kroky 6 a 7 commitnuté (`2af0ec3`, `7ae2381`), `context.py` neexistoval.
+
+### Hotové
+
+**`core/context.py` – krok 8 je `[x]`.** `fill_tokens()` + `build_prompt()` nad `HistoryItem` / `PromptPlan`, konštanty `TOKENS_PER_MESSAGE = 8` a `PROMPT_RESERVE = 64`. Autor písal, Claude navrhoval a písal self-test. Rozhodnutia v ALMANAC §8 krok 8.
+
+**Modul je funkcie, nie trieda.** Autor sa pýtal na `class Tokenizer` – zamietnuté: tokenizácia už je v enginu a objekt by si držal `n_ctx`, ktoré sa mení reloadom modelu, takže by ticho počítal starým rozpočtom.
+
+**Konštanty overené proti realite** (2026-11-02, `prompt eval` z llama.cpp pri `verbose=True`):
+
+| model | odhad `prompt_tokens` | reálny prompt |
+|---|---|---|
+| Mistral 7B Instruct v0.2 | 256 | 211 |
+| Gemma 3 4B | 230 | 206 |
+
+Odhad je v oboch prípadoch **nad** skutočnosťou, čo je požadovaný smer – `TOKENS_PER_MESSAGE` nemá byť presné, má zabrániť tichému skráteniu `max_tokens`. Mistral template navyše prijal `system` rolu bez chyby.
+
+**`Database.set_message_tokens(counted)`** doplnené do úložiska – berie celý slovník `plan.counted` v jednej transakcii, prázdny slovník nič neotvára, `chats.updated_at` nechá na pokoji. V self-teste databázy pribudla sekcia „tokeny správ (cache)“: `None` → `{3: 11, 4: 22}`, kontrola, že sa hodnoty nepomiešali s id, a že prázdny slovník ani neexistujúce id nespadnú.
+
+**Oba self-testy (`storage.database`, `core.app_settings`) teraz zapisujú do `devdata/selftest-*`,** nie do temp adresára – dáta po behu zostanú na pozretie a adresár sa na začiatku maže, inak by druhý beh netestoval „prvé spustenie“ a v databáze by sa nabalili ďalšie chaty.
+
+### Zistenia, ktoré stoja za zápis
+
+| Zistenie | Prečo bolo zradné |
+|---|---|
+| `usable = usable[-1]` namiesto `usable[:-1]` | z listu sa stane `HistoryItem` → `TypeError` až na ďalšom riadku, nie na tom chybnom |
+| `if cost > remaining: pass` namiesto `break` | orezávanie prestane fungovať **bez chyby** – ponechá celú históriu a `remaining` ide do mínusu |
+| `start = len(usable)` ako začiatočná hodnota cyklu | pri `0` by sa pri nezmestení najnovšej správy ponechala celá história namiesto ničoho |
+| `counted` so všetkými správami | krok 9 by pri každej odpovedi prepisoval N riadkov `content.tokens` hodnotami, ktoré tam už sú |
+| `if item.tokens is None`, nie `if not item.tokens` | nula je legitímna hodnota (§7.2), `not 0` je `True` → prázdna správa sa tokenizuje znova a znova |
+| `from __future__ import annotations` chýba v `hardware.py` | nie je to chyba: treba ho len na forward reference a staršie runtime, `hardware.py` ani jedno nemá |
+| poradie parametrov v `executemany` pri `UPDATE ... SET tokens = ? WHERE id = ?` | n-tica musí byť `(tokens, id)`, opačne voči slovníku – pri zámene SQLite neprotestuje, len neaktualizuje nič |
+
+### Nedoriešené do ďalšej session
+
+1. **Krok 9 – minimálne UI** (okno, vstup, streamovaná odpoveď cez worker, sidebar s chatmi). Prvý krok, kde sa inštaluje PyQt6. Pozor na poradie pri zatváraní okna: `request_stop()` → počkať na worker → `unload()` (§8 krok 3) a na Stop = vrátenie celého ťahu.
+2. Odhad pamäte bez KV cache – doplniť s čítačom hlavičky `.gguf` (krok 10).
 3. Neoverené modely: Llama 3 (`strftime_now`), Qwen 3 (`<think>`).

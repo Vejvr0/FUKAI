@@ -193,6 +193,13 @@ class Database:
         return count[0]["total"]
 
 
+    def set_message_tokens(self, counted: dict[int, int]) -> None:
+        if not counted:
+            return
+        with self.transaction() as conn:
+            conn.executemany("UPDATE content SET tokens = ? WHERE id = ?", [(tokens, message_id) for message_id, tokens in counted.items()])
+
+
     # --- Chat properties methods ---
     def get_properties(self, chat_id: int) -> dict | None:
         rows = self.query("SELECT data FROM properties WHERE chat_id = ?", (chat_id,))
@@ -253,6 +260,18 @@ if __name__ == "__main__":
         db.rename_chat(chat, "Premenovaný")
         print(f"rename_chat:  {db.list_chats()[0]['title']}")
 
+        print("\n--- tokeny správ (cache, §7.2) ---")
+        m1 = db.add_message(chat, {"text": "Správa bez tokenov"}, None, "user")
+        m2 = db.add_message(chat, {"text": "Odpoveď bez tokenov"}, None, "assistant")
+        pairs = lambda: {m["id"]: m["tokens"] for m in db.get_messages(chat)}
+        print(f"po add_message:        {pairs()}")
+        db.set_message_tokens({m1: 11, m2: 22})
+        print(f"po set_message_tokens: {pairs()}")
+        print(f"hodnoty nepomiešané s id: {pairs()[m1] == 11 and pairs()[m2] == 22}")
+        db.set_message_tokens({})
+        db.set_message_tokens({999: 5})
+        print(f"prázdny dict a neexistujúce id: bez chyby, content_tokens={db.content_tokens(chat)}")
+
         print("\n--- vlastnosti ---")
         print(f"get_properties: n_ctx={db.get_properties(chat)['load']['n_ctx']}, "
               f"temperature={db.get_properties(chat)['sampling']['temperature']}")
@@ -278,6 +297,7 @@ if __name__ == "__main__":
         after_n = db.query("SELECT COUNT(*) AS n FROM chats")[0]["n"]
         print(f"create_chat s neexistujúcim modelom: chatov {before} → {after_n}"
               f" {'(atomické)' if before == after_n else '(SIROTA!)'}")
+        tokens = None
 
         db.delete_model(mistral)
         print(f"po delete_model je chats.model_id: "
