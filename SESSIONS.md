@@ -303,8 +303,23 @@ Tri z piatich metód nad `models` padli pri prvom zavolaní, hoci „to prešlo�
 | vymenované kľúče v `to_dict` namiesto `fields()` | nový slider v krokoch 9–11 by sa ticho neukladal |
 | KV cache pri odhade pamäte | odmerané: Mistral 7B má pri `n_ctx=2048` KV 256 MiB, pri 32768 by to boli 4 GB – `MEMORY_MARGIN` to pokryje len pri malom kontexte |
 
+**`core/app_settings.py` dokončený – krok 7 je `[x]`.** `AppSettings` (frozen dataclass) + modulové `load_settings()` / `save_settings()`, atomický zápis cez `.tmp` + `os.replace()`, rozbitý súbor → predvolené + `Notice`, `models_dir` pod neexistujúcou cestou → fallback. `version` je informatívna pečiatka, nič sa na nej nevetví. Self-test písal Claude, beží v temp adresári cez `FUKAI_HOME`. Rozhodnutia v ALMANAC §8 krok 7.
+
+**Spresnené v §7.1:** web search má **tri** úrovne (aplikácia / chat / správa), prílohy dve. Globálne vypnutie prepíše chat pri skladaní promptu (`web_search_enabled AND properties.chat.web_search`), ale hodnotu v `properties` nemení.
+
+### Zistenia z kroku 7
+
+| Zistenie | Prečo bolo zradné |
+|---|---|
+| `except OSError` okolo `save_settings()` v `load_settings()` | `ConfigError` nie je podtrieda `OSError` → chyba preletí von a zabije štart funkcie, ktorá nikdy nemá vyhodiť výnimku |
+| `with_suffix(".tmp")` | príponu **nahradí**, nie pridá – zo `settings.json` je `settings.tmp`; správne je `with_name(path.name + ".tmp")` |
+| `Path.rename` na Windows | padne, keď cieľ existuje – a ten existuje vždy okrem prvého spustenia; `os.replace` prepíše |
+| `clamped()` na `AppSettings` | navrhnutý zo zvyku zo `settings.py`, ale nie je čo orezávať – jediná opraviteľná hodnota (`theme`) prichádza len zo súboru, takže patrí do `from_dict` |
+| `= default_models_dir()` ako predvolená hodnota poľa | vyhodnotí sa pri importe → ignorovalo by `FUKAI_HOME` nastavenú neskôr; preto `field(default_factory=...)` |
+| `data.get("models_dir", default)` pri `"models_dir": null` | kľúč existuje, `get` vráti `None` a `Path(None)` padne – treba `or` |
+
 ### Nedoriešené do ďalšej session
 
-1. **Krok 7 – `core/app_settings.py`** (`settings.json`: `models_dir`, prepínače, téma, posledný model). Iné úložisko než vlastnosti chatu (§7.1).
+1. **Krok 8 – `core/context.py`** (počítanie tokenov, orezávanie histórie). Engine dáva `tokenize()`, `count_tokens()`, `n_ctx`; úložisko `content.tokens`. Orezáva sa to, čo ide do promptu, nie databáza (§7.2). Pozor na striedanie rolí user/assistant (Gemma template padne na user, user) a na `content_tokens()`, ktoré vracia `0` aj pri samých `NULL`.
 2. Odhad pamäte bez KV cache – doplniť s čítačom hlavičky `.gguf` (krok 10), teraz už je známa aj veľkosť na token.
 3. Neoverené modely: Llama 3 (`strftime_now`), Qwen 3 (`<think>`).

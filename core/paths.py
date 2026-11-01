@@ -2,9 +2,7 @@ from __future__ import annotations
 import os
 import platformdirs
 from pathlib import Path
-from core.constants import (
-    APP_NAME, SETTINGS_FILENAME, DB_FILENAME, MODELS_DIRNAME
-)
+from core.constants import APP_NAME, SETTINGS_FILENAME, DB_FILENAME, MODELS_DIRNAME
 
 __all__ = [
     "APP_NAME",
@@ -14,6 +12,7 @@ __all__ = [
     "default_models_dir",
     "ensure_dir",
 ]
+
 
 def app_dir() -> Path:
     home = os.environ.get("FUKAI_HOME")
