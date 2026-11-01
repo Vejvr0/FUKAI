@@ -279,3 +279,32 @@ Tri z piatich metód nad `models` padli pri prvom zavolaní, hoci „to prešlo�
 2. **`settings.py` – časť pre úložisko:** `to_dict`/`from_dict`, obal s `defaults_for()` a `needs_reload()` (krok 6).
 3. Odhad pamäte bez KV cache – doplniť s čítačom hlavičky `.gguf` (krok 10).
 4. Neoverené modely: Llama 3 (`strftime_now`), Qwen 3 (`<think>`).
+
+## 2026-11-01 – PC 1: engine overený na Mistrale, `settings.py` dokončený (krok 6)
+
+**Stav na začiatku:** všetko z Macu commitnuté (`f825724`), engine na PC 1 ešte nespustený, `settings.py` mal hotovú len časť pre engine.
+
+### Hotové
+
+**Engine overený na PC 1 na Mistrale 7B Q4_K_M** (`n_ctx=2048`), teda nedoriešený bod 1 z 2026-10-31. Čísla a všetky tri vetvy `_memory_pool` sú v ALMANAC §8 krok 3. Podstatné: `offloaded 33/33 layers to GPU` (32 blokov + výstupná, takže `n_layers + 1` platí aj na `llama` architektúre), 66,9 t/s, load 2,3 s bez warm-upu.
+
+**`core/settings.py` dokončený – krok 6 je `[x]`.** Autor písal sám, Claude navrhoval a kontroloval, `__main__` self-test písal Claude. Pribudlo: `ChatProperties` (obal s `defaults_for`, `to_dict`, `from_dict`, `needs_reload`), `to_dict`/`from_dict` na štyroch dataclassoch, nová `ModelMeta` ako dohodnutý tvar `models.meta`, pomocné `_as_dict` / `_known` / `_NOT_STORED` a konštanty kľúčov metadát (`META_ARCH`, `META_CONTEXT_LENGTH`, `META_BLOCK_COUNT`), ktoré používa aj `llm_engine._meta_int()`. Rozhodnutia a dôvody v ALMANAC §8 krok 6.
+
+**Rozhodnuté: o reloade modelu rozhoduje volajúci (UI), nie engine.** Engine reloaduje vždy, keď dostane `load()`; UI sa pred tým spýta `needs_reload()`. Tým sa opravila veta v ALMANAC §8 krok 6, ktorá tvrdila, že engine porovnáva `params == self._params` – engine také porovnanie nemá.
+
+### Zistenia, ktoré stoja za zápis
+
+| Zistenie | Prečo bolo zradné |
+|---|---|
+| `if n_ctx is None and meta.n_ctx_train` v `defaults_for` | `n_ctx` je o riadok vyššie nastavené na `N_CTX_DEFAULT`, takže vetva nikdy nenabehne a kontext sa neoreže na možnosti modelu – nič nespadne |
+| `model_path` zabudnutý v blobe | `cls(model_path=path, **data)` → `TypeError: got multiple values for keyword argument`; preto `_known()` filtruje aj výstupný smer |
+| `data.get("load", {})` pri `"load": null` | `get` vráti `None` (kľúč existuje), `**None` padne – musí byť `or {}` |
+| `stop` cez JSON | z `tuple` sa stane `list`; vracia to `.clamped()` na konci `from_dict` |
+| vymenované kľúče v `to_dict` namiesto `fields()` | nový slider v krokoch 9–11 by sa ticho neukladal |
+| KV cache pri odhade pamäte | odmerané: Mistral 7B má pri `n_ctx=2048` KV 256 MiB, pri 32768 by to boli 4 GB – `MEMORY_MARGIN` to pokryje len pri malom kontexte |
+
+### Nedoriešené do ďalšej session
+
+1. **Krok 7 – `core/app_settings.py`** (`settings.json`: `models_dir`, prepínače, téma, posledný model). Iné úložisko než vlastnosti chatu (§7.1).
+2. Odhad pamäte bez KV cache – doplniť s čítačom hlavičky `.gguf` (krok 10), teraz už je známa aj veľkosť na token.
+3. Neoverené modely: Llama 3 (`strftime_now`), Qwen 3 (`<think>`).

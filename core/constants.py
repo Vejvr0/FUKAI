@@ -39,3 +39,7 @@ SYSTEM_PROMPT_DEFAULT = ""
 WEB_SEARCH_DEFAULT = False
 GGUF_SUFFIX = ".gguf"
 MEMORY_MARGIN = 1.2
+META_ARCH = "general.architecture"
+META_CONTEXT_LENGTH = "context_length"
+META_BLOCK_COUNT = "block_count"
+

@@ -3,7 +3,7 @@ from collections.abc import Iterator
 from enum import Enum
 import threading
 from types import ModuleType
-from core.constants import MEMORY_MARGIN
+from core.constants import MEMORY_MARGIN, META_ARCH, META_CONTEXT_LENGTH, META_BLOCK_COUNT
 from core.hardware import detect_gpu, free_ram_mb
 from core.settings import LoadParams, SamplingParams
 from core.errors import (
@@ -135,12 +135,12 @@ class LlmEngine:
     
     @property
     def n_ctx_train(self) -> int | None:
-        return self._meta_int("context_length")
+        return self._meta_int(META_CONTEXT_LENGTH)
     
     
     @property
     def n_layers(self) -> int | None:
-        return self._meta_int("block_count")
+        return self._meta_int(META_BLOCK_COUNT)
     
     
     @property
@@ -153,7 +153,7 @@ class LlmEngine:
         llm = self._llm
         if llm is None:
             return None
-        arch = llm.metadata.get("general.architecture")
+        arch = llm.metadata.get(META_ARCH)
         value = llm.metadata.get(f"{arch}.{key}")
         try:
             return int(value)
@@ -230,7 +230,7 @@ if __name__ == "__main__":
 
     sys.stdout.reconfigure(encoding="utf-8")
 
-    model = sys.argv[1] if len(sys.argv) > 1 else "models/gemma-3-4b-it-Q4_K_M.gguf"
+    model = sys.argv[1] if len(sys.argv) > 1 else "models/mistral-7b-instruct-v0.2.Q4_K_M.gguf"
     n_ctx = int(sys.argv[2]) if len(sys.argv) > 2 else 2048
 
     profil = detect()
