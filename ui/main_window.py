@@ -4,8 +4,10 @@ from PyQt6.QtCore import Qt
 from core.app_settings import AppSettings
 from core.constants import APP_NAME
 from core.hardware import HardwareProfile
+from core.errors import Notice
 from storage.database import Database
 from ui.constants import WINDOW_MIN_SIZE, WINDOW_SIZE
+from ui.toast import ToastHost
 
 __all__ = ["MainWindow"]
 
@@ -25,4 +27,10 @@ class MainWindow(QMainWindow):
         info = QLabel(f"os: {hw.system} | verzia: {hw.release} | backend {hw.backend} | CPU P-cores: {hw.cores_performance} | RAM: {hw.ram_total_mb / 1024:.0f} GB")
         info.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.setCentralWidget(info)
+        
+        self._toast = ToastHost(self)
+        
+        
+    def show_notice(self, notice: Notice) -> None:
+        self._toast.show_notice(notice)
     

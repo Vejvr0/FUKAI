@@ -326,9 +326,10 @@ def check_ram(profil: HardwareProfile) -> Notice | None:
 
     allowed = data["ram_mb"]
     if profil.ram_available_mb < allowed:
-        return Notice.error(
-            "Tvoje zariadenie nemá dostatok voľnej RAM.",
-            hint=f"Potrebné je aspoň {allowed / 1024:.0f} GB voľnej pamäte. Zatvor iné aplikácie a skús to znova.",
+        free_gb = f"{profil.ram_available_mb / 1024:.1f}".replace(".", ",")
+        return Notice.warning(
+            "Voľná pamäť RAM nemusí na model stačiť.",
+            hint=f"Voľných je {free_gb} GB, odporúča sa aspoň {allowed / 1024:.0f} GB pre najmenšie modely. Skús zatvoriť iné aplikácie.",
             detail=f"zistené: {profil.ram_available_mb} MB, minimum: {allowed} MB",
         )
 

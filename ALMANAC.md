@@ -514,7 +514,24 @@ Platí teda pravidlo: **vnútri `transaction()` sa volá `conn.execute()`, nikdy
      - `QRect` s `float` → `TypeError`; pri výpočtoch z pomerov `QRectF`.
      - `self.notices: list[Notice]` **bez `= []` atribút nevytvorí** – anotácia bez priradenia sa zahodí → `AttributeError`. Opak pasce z kroku 6: v `@dataclass` robí pole dvojbodka, v `__init__` robí atribút len `=`.
      - `_set_windows_app_id()` definovaná, ale nezavolaná – na Macu sa to neprejaví nikdy, na Windows len ikonou na paneli úloh. Ticho.
-   - **Zistené pri teste:** `check_ram` na 8 GB Macu hlási `ERROR` takmer vždy (voľných 1,6 GB pri minime 4 GB) → modálny dialóg pri každom štarte. Zvážiť `WARNING`, alebo porovnávať celkovú RAM namiesto voľnej.
+   - **Zistené pri teste:** `check_ram` na 8 GB Macu hlásil `ERROR` takmer vždy (voľných 1,6 GB pri minime 4 GB) → modálny dialóg pri každom štarte. Vyriešené v kúsku 2.
+   **Kúsok 2 – toast hlásenia** (navrhnuté 2026-11-02, autor prepisuje do repa): `Notice` sa v GUI neukazujú dialógom, ale **toastom** – názov, správa, hint, tlačidlo ✕ a časová os do automatického zatvorenia. `QMessageBox` zostáva **len pre fatálnu chybu pri štarte**, keď ešte nie je okno, kam toast dať. Súbory: `ui/toast.py` (`Toast`, `ToastHost`), `ui/style.py` (začiatok globálneho stylesheetu, §5 bod 6), `MainWindow.show_notice()`. Rozhodnutia:
+   - **`check_ram` je `WARNING`, nie `ERROR`** (rozhodnutie autora): „Voľná pamäť RAM nemusí na model stačiť“ s číslami v hinte. Nedostatok voľnej RAM appku neblokuje – model sa ešte nenačítava a pamäť sa uvoľní zatvorením iných aplikácií. Hlási sa pri každom štarte, keď platí.
+   - **Názov toastu sa odvodzuje zo `Severity`** (Informácia / Varovanie / Chyba), `Notice` pole `title` nemá. Zmena `errors.py` a všetkých miest, kde `Notice` vzniká, by nepriniesla nič, čo by severity nepovedala. Ak bude treba konkrétnejší názov, pribudne voliteľné pole.
+   - **Trvanie podľa závažnosti:** INFO 3 s, WARNING 5 s (voľba autora pri prepise), **ERROR sa sám nezavrie** (bez časovej osi, len ✕) – chyba sa nemá stratiť, kým ju používateľ nevidel. Pod myšou sa čas **pozastaví** (`enterEvent` / `leaveEvent`).
+   - **Časová os je `QTimeLine` → `QProgressBar`**, nie `QTimer` + ručný výpočet. Pozor: predvolená krivka `QTimeLine` je `InOutSine`, odpočet by sa na začiatku a konci spomaľoval → `Linear`.
+   - **Toast je dieťa okna (overlay), nie samostatné okno.** Bezrámové top-level okno sa na macOS nehýbe s hlavným oknom, kradne fokus a zostáva nad inými aplikáciami. Cena: polohu treba prepočítať pri zmene veľkosti okna – `ToastHost` je `eventFilter` na `Resize` a vracia `False`, aby udalosť išla ďalej.
+   - **Pravý horný roh**, toasty pod sebou v poradí príchodu. Dole bude vstupné pole chatu.
+   - **`detail` do toastu nejde** – len do logu, tak ako pri dialógu (kúsok 1).
+   - **`dismiss()` je chránený príznakom `_closing`** – klik na ✕ v tej istej chvíli, ako dobehne čas, by inak vyradil toast zo zoznamu dvakrát (`ValueError` v `list.remove`).
+   - **Výška cez `setFixedHeight(heightForWidth(TOAST_WIDTH))`, nie `adjustSize()`.** `adjustSize()` odhadne výšku zalomeného textu skôr, než pozná šírku, a prebytok rozdelí medzi riadky – toast mal medzi názvom, správou a hintom veľké medzery (overené screenshotom).
+   - Farby sú zatiaľ natvrdo v `ui/style.py`, svetlá téma; tmavá príde s témami (krok 14). Štýl podľa závažnosti cez dynamickú vlastnosť: `setProperty("severity", ...)` + `QFrame#toast[severity="warning"]`.
+   - **Pasce pri písaní** (2026-11-02, overené):
+     - `event.Type()` namiesto `event.type()` – `QEvent.Type` je trieda enumu, jej volanie bez hodnoty → `TypeError: EnumType.__call__() missing … 'value'`. Padá hneď pri prvom `Resize` okna, ešte pred zobrazením toastu, a výnimka v `eventFilter` zhodí celý proces (`zsh: abort`).
+     - Chýbajúce `super().__init__(parent)` v podtriede widgetu → `RuntimeError: super-class __init__() … was never called` pri prvom `self.set…()`.
+     - `QVBoxLayout()` bez `self` – layout nie je nastavený na toast, ten je prázdny a jeho deti sa nezobrazia. Ticho.
+     - `self.close.emit(...)` namiesto `self.closed.emit(...)` – `close` je metóda `QWidget`, nie signál → `AttributeError` pri každom zatvorení. Pozor na mená signálov, ktoré sa líšia od zdedených metód jedným písmenom.
+     - Zabudnuté `setObjectName("toastClose")`, `setTextVisible(False)` a `setFixedHeight(heightForWidth(...))` – nič nespadne, len sa neuplatní štýl, vedľa pruhu sa ukáže „100 %“ a výška nesedí. Ticho.
 10. [ ] **Čítač hlavičky `.gguf`, ktorý nenačíta model** – prerekvizita importu modelu. *Overené 2026-10-30:* `n_layers` aj `n_ctx_train` v `llm_engine.py` idú cez `self._llm._model.model`, teda sú dostupné **až po `load()`**. Popup so zoznamom modelov a rozsahy slidrov ich ale potrebujú **pred** načítaním, preto sa čítajú raz pri importe a cachujú v `models.meta` (§7.1). Pri vytváraní chatu to nevadí – model vtedy už beží.
 11. [ ] Panel nastavení per chat + výber a import modelu
 12. [ ] Prílohy (drag & drop, extrakcia, kontrola tokenov) – prvá migrácia schémy, `SCHEMA_VERSION` na 2
