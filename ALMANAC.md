@@ -1,14 +1,20 @@
 # FUKAI – Almanac
 
-Zdieľaná pamäť projektu pre Claude Code na všetkých strojoch (Mac aj PC). Sem patria rozhodnutia, obmedzenia a kontext, ktorý sa nedá vyčítať z kódu. Pri zmene rozhodnutia prepíš príslušnú sekciu, nepridávaj protichodné záznamy. Posledná revízia: 2026-10-30.
+Zdieľaná pamäť projektu pre Claude Code na všetkých strojoch (Mac aj PC). Sem patria rozhodnutia, obmedzenia a kontext, ktorý sa nedá vyčítať z kódu. Pri zmene rozhodnutia prepíš príslušnú sekciu, nepridávaj protichodné záznamy. Posledná revízia: 2026-11-02.
 
 ## 1. Projekt
 
 - **FUKAI** = Fakultná Univerzálna Kognitívna AI. Univerzitný projekt (Žilinská univerzita), autor Lukáš Vavro.
 - Desktopová aplikácia na chat s lokálnymi LLM (štýl Ollama / LM Studio), crossplatform Windows + macOS.
 - Repo: https://github.com/Vejvr0/FUKAI (súkromné). Kód sa synchronizuje **iba cez Git**, nie cez OneDrive (ten je len na dokumenty/návrhy).
-- Logo: štvorcové 1:1, profesionálne logo v .png formáte. Zatiaľ nie je v repe → patrí do `assets/` (+ `.ico` pre Windows, `.icns` pre Mac).
-- SpashScreen: ilustrácia baču s ovečkou, kde je nápis FUKAI s popisom chat ktorý to fúka. áno prechádzame na Zatiaľ nie je v repe → patrí do `assets/` 
+- **Logo a ikony** sú v `assets/` (2026-11-02). Originály sú na OneDrive (`semestralka/brand`, `semestralka/UI`).
+  - `logo.png` 1254 × 1254 s **bielym pozadím** – zdroj všetkého ostatného.
+  - `logo_transparent.png` 1024 – biela odstránená metódou „color to alpha“ (farby zostanú, nie je to orezanie podľa prahu). Do UI, napr. sidebar na modrom pozadí. Tmavomodré ťahy loga majú na tmavej téme slabý kontrast – riešiť pri téme.
+  - `ico/fukai.ico` – **jeden súbor s 9 veľkosťami** (16–256), PNG vo vnútri. Windows aj PyInstaller chcú jeden `.ico` s viacerými veľkosťami, nie samostatné súbory na veľkosť; Pôvodné samostatné `ico/logo16x16.ico` … `logo256x256.ico` boli zmazané.
+  - `icns/fukai.icns` (16–1024) + `icns/fukai_1024.png` – macOS: logo na **bielej dlaždici so zaoblenými rohmi** podľa Apple mriežky (dlaždica 824/1024, polomer ~185). Windows ikona dlaždicu nemá, je priehľadná.
+  - **Pod 128 px je len symbol bez nápisu FUKAI** – text by bol nečitateľný.
+  - Vyrobené skriptom (numpy + PyQt6 + `iconutil`), ktorý **nie je v repe**. Pri zmene loga treba ikony vyrobiť znova.
+- **Splash** `assets/splash_screen.png` 1624 × 1320, bez priehľadnosti: bača s ovečkou, nápis FUKAI, logo ŽU/FEIT, dole modrý pruh `#3d87b6` (riadky 1266–1315) s vpáleným textom „Lokálna chatbot aplikácia“ vľavo. **Verzia sa do obrázka nepíše** – vpravo v pruhu je stav štartu kreslený v kóde.
 
 ## 2. Funkcie (rozsah)
 
@@ -346,7 +352,7 @@ Platí teda pravidlo: **vnútri `transaction()` sa volá `conn.execute()`, nikdy
 
 ## 8. Poradie práce a stav
 
-0. [x] `requirements.txt`, `requirements-llama-win-cuda.txt`, `requirements-llama-mac.txt` hotové (2026-10-27). V `.venv` na PC 1 je `psutil` + `llama-cpp-python` 0.3.36 CUDA (2026-10-28). **PyQt6 ešte nie je nainštalovaný** – príde s krokom 4.
+0. [x] `requirements.txt`, `requirements-llama-win-cuda.txt`, `requirements-llama-mac.txt` hotové (2026-10-27). V `.venv` na PC 1 je `psutil` + `llama-cpp-python` 0.3.36 CUDA (2026-10-28). **PyQt6 6.11.0** je na MacBooku (overené 2026-11-02 spustením UI); na PC 1 overiť pred prvým spustením `main.py`.
 1. [x] `core/errors.py` – hierarchia chýb delená **podľa príčiny**, nie podľa modulu. Každá chyba nesie tri oddelené texty: `message` (veta pre používateľa), `hint` (čo s tým), `detail` (technický text do logu). Plus `Notice` + `Severity` na **nefatálne** oznámenia. Vďaka tomu UI vykresľuje chyby aj varovania rovnako. `hint` je keyword-only, aby sa tie tri texty nedali zameniť.
 2. [x] `core/hardware.py` – detekcia a 4 kontroly (`check_os`, `check_cores`, `check_ram`, `check_gpu`). Overené na PC 1 aj MacBooku. Dáva tri veci, pre ktoré modul existuje: `n_threads` (= `cores_performance`), `n_gpu_layers` (−1/0 podľa backendu) a `backend` (`cuda`/`metal`/`cpu`). **Zásada: detekcia nikdy nevyhodí výnimku von** – zlyhanie sondy sa mení na `Notice` a appka beží na CPU. `required_wheel()` je zvlášť, mimo `check_gpu` – nie je to problém, ale fakt, a hlásiť ho treba až keď llama-cpp-python chýba. Pevné údaje (minimálne verzie OS, mapa compute capability → wheel) sú vo `vars/hw.json`, konštanty v `core/constants.py`.
 3. [x] **`core/llm_engine.py` – prepísaný od nuly, hotový 2026-10-31** (kúsky 1–5 písal autor, 6–8 Claude na jeho žiadosť). Konzolový test: `python -m core.llm_engine [model.gguf] [n_ctx]` – načítanie, údaje o modeli, streaming s t/s, Stop, `LENGTH`. Na M2 Gemma 3 4B ~12–23 t/s (kolíše s voľnou pamäťou), Qwen 2.5 1.5B ~25 t/s. **Overené aj na PC 1 (2026-11-01), Mistral 7B Q4_K_M, `n_ctx=2048`:** load 2,3 s, `offloaded 33/33 layers to GPU` (32 blokov + výstupná → `n_layers + 1` platí aj tu), generovanie 66,9 t/s, Stop aj `LENGTH` v poriadku. Buffery na CUDA0: model 4095 MiB + KV 256 MiB + compute 168 MiB; VRAM 15296 → 10647 MB voľných, teda −4649 MB. Všetky tri vetvy `_memory_pool` dávajú zmysluplné čísla (`-1` → VRAM 15296, `0` → RAM 18240, `16` → 33538 spolu). Žiadny warm-up ako 2026-10-28 (§3) sa nezopakoval. Pôvodná verzia z 2026-10-28: `git show fd59ca9:core/llm_engine.py`.
@@ -491,6 +497,24 @@ Platí teda pravidlo: **vnútri `transaction()` sa volá `conn.execute()`, nikdy
    - **Pasca v `executemany`: poradie parametrov je obrátené voči slovníku.** V SQL je `SET tokens = ?` prvé a `WHERE id = ?` druhé, takže n-tica musí byť `(tokens, message_id)`. Pri zámene SQLite **neprotestuje** – spraví `tokens = <id>` tam, kde `id = <počet tokenov>`, čo väčšinou neaktualizuje nič. Self-test to odhalí len vtedy, keď sú hodnoty rôzne a nie sú to id (`{id1: 11, id2: 22}`).
    - **Pasca na krok 11:** `max_tokens` môže byť podľa `MAX_TOKENS_MAX` 32768, zatiaľ čo `n_ctx` 4096 – `clamped()` tieto dve hodnoty navzájom nekontroluje, takže rozpočet vyjde negatívny a `build_prompt` skončí `ContextOverflowError` ešte pred prvým tokenom. Slider `max_tokens` treba v UI obmedziť podľa `n_ctx`; chyba je poistka, nie náhrada.
 9. [ ] Minimálne UI: okno, vstup, streamovaná odpoveď cez worker (`ui/workers.py` obalí `LlmEngine.stream()`; `request_stop()` je volateľný z UI vlákna) + sidebar s chatmi
+   **Návrh UI** (`semestralka/UI/dizajn.png` na OneDrive, 2026-11-02): úzky ľavý panel s logom a tromi tlačidlami – **Knižnica** (zoznam chatov, „Fúkni nový čet“), **Vlastnosti** (model, pamäť kontextu, výkon CPU/GPU, dĺžka odpovede, kreativita, definícia = `system_prompt`, Použiť), **Aplikácia** (prílohy, web, cesty) – a vpravo `QStackedWidget`. Svetlá aj tmavá varianta. **Nezhody s ALMANAC-om, otvorené:** farby sú modré, nie zemité (§5); „Cesta ku konverzáciam“ odporuje §7.1 (cesta k chatom v 1. verzii nie je nastaviteľná); zoznam chatov je stránka, nie trvalý sidebar.
+   **Kúsok 1 – štart aplikácie ✅** (hotové 2026-11-02 na M2; Claude navrhol, autor písal): `FUKAI_HOME=./devdata python main.py` → splash so stavom v pruhu → detekcia → prázdne okno s riadkom o hardvéri → `shutdown()` zavrie databázu. Súbory: `main.py` → `ui/application.py` → `ui/splash.py` → `ui/main_window.py` (zatiaľ prázdne), konštanty UI v `ui/constants.py`, `APP_VERSION` v `core/constants.py`. Rozhodnutia:
+   - **`Application(QApplication)` vlastní služby** (`settings`, `hardware`, `db`, neskôr engine a worker) a **odovzdáva ich oknám v konštruktore**. Widgety si ich nemajú brať cez `QApplication.instance()` – to je globálna premenná v prestrojení. Patrí sem aj `shutdown()` na `aboutToQuit`, lebo poradie ukončenia (stop → worker → `unload()` → `db.close()`) presahuje okno.
+   - **Štart beží v UI vlákne**: `load_settings()` → `detect()` + 4 kontroly → `Database.connect()`, medzi krokmi `showMessage()` + `processEvents()`. Worker netreba – na M2 to trvá **0,04 s**. Model sa pri štarte nenačítava (§5 bod 2).
+   - **Splash je zobrazený minimálne 2 s** (`SPLASH_MIN_MS`), čas sa meria až od zobrazenia. Prvé `show()` na macOS samo trvá ~1 s, takže od spustenia po hlavné okno je to ~3 s.
+   - **Notice sa zbierajú a hlásia až po zobrazení hlavného okna** – všetky do logu (`log_line()`), `ERROR` aj do dialógu. Je to dočasné, neskôr ich nahradí pás v okne. **`StorageError` pri štarte** = kritický dialóg a koniec (`return 1`).
+   - **`detail` sa do `QMessageBox` nedáva** (`setDetailedText`) – na macOS to Qt hlási ako `qt.qpa.dialogs: Message box contains detailed text` a podľa `errors.py` je to text do logu.
+   - **Splash pixmap sa škáluje na `SPLASH_WIDTH × devicePixelRatio`** a dostane `setDevicePixelRatio`, inak je na Retine/150 % rozmazaný. Pozícia textu je v pomeroch obrázka, nie v pixeloch. `mousePressEvent` je prázdny – predvolene klik splash skryje.
+   - **Windows: `SetCurrentProcessExplicitAppUserModelID` pred `QApplication`**, inak je na paneli úloh ikona `python.exe`. *Neoverené na PC.* Na macOS sa pri spustení cez `python` v menu zobrazí „Python“ – vyrieši až `.app` bundle (krok 14).
+   - **Pasce pri písaní** (všetky overené, štyri z nich ticho – appka by bežala, len inak):
+     - `SplashScreen` / `Database` bez `()` = trieda namiesto inštancie → `TypeError: first argument of unbound method` až pri prvom volaní metódy.
+     - `source.isNull` bez `()` – metóda je vždy pravdivá, takže splash by bol **vždy** náhradný modrý obdĺžnik. Ticho.
+     - `def drawContent` namiesto `drawContents` – Qt prepísanú metódu nájde len pod presným menom; inak kreslí predvolene (čierny text vľavo dole). Ticho, pri prepisovaní virtuálnych metód Qt kontrolovať meno.
+     - `pixmap.devicePixelRatio(dpr)` – getter, správne `setDevicePixelRatio`.
+     - `QRect` s `float` → `TypeError`; pri výpočtoch z pomerov `QRectF`.
+     - `self.notices: list[Notice]` **bez `= []` atribút nevytvorí** – anotácia bez priradenia sa zahodí → `AttributeError`. Opak pasce z kroku 6: v `@dataclass` robí pole dvojbodka, v `__init__` robí atribút len `=`.
+     - `_set_windows_app_id()` definovaná, ale nezavolaná – na Macu sa to neprejaví nikdy, na Windows len ikonou na paneli úloh. Ticho.
+   - **Zistené pri teste:** `check_ram` na 8 GB Macu hlási `ERROR` takmer vždy (voľných 1,6 GB pri minime 4 GB) → modálny dialóg pri každom štarte. Zvážiť `WARNING`, alebo porovnávať celkovú RAM namiesto voľnej.
 10. [ ] **Čítač hlavičky `.gguf`, ktorý nenačíta model** – prerekvizita importu modelu. *Overené 2026-10-30:* `n_layers` aj `n_ctx_train` v `llm_engine.py` idú cez `self._llm._model.model`, teda sú dostupné **až po `load()`**. Popup so zoznamom modelov a rozsahy slidrov ich ale potrebujú **pred** načítaním, preto sa čítajú raz pri importe a cachujú v `models.meta` (§7.1). Pri vytváraní chatu to nevadí – model vtedy už beží.
 11. [ ] Panel nastavení per chat + výber a import modelu
 12. [ ] Prílohy (drag & drop, extrakcia, kontrola tokenov) – prvá migrácia schémy, `SCHEMA_VERSION` na 2

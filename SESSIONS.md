@@ -363,3 +363,36 @@ Odhad je v oboch prípadoch **nad** skutočnosťou, čo je požadovaný smer –
 1. **Krok 9 – minimálne UI** (okno, vstup, streamovaná odpoveď cez worker, sidebar s chatmi). Prvý krok, kde sa inštaluje PyQt6. Pozor na poradie pri zatváraní okna: `request_stop()` → počkať na worker → `unload()` (§8 krok 3) a na Stop = vrátenie celého ťahu.
 2. Odhad pamäte bez KV cache – doplniť s čítačom hlavičky `.gguf` (krok 10).
 3. Neoverené modely: Llama 3 (`strftime_now`), Qwen 3 (`<think>`).
+
+## 2026-11-02 – MacBook: logo, ikony, splash a štart aplikácie (krok 9, kúsok 1)
+
+**Stav na začiatku:** kroky 0–8 commitnuté (`4d9833e`), `ui/` prázdne, `main.py` bol testovací skript enginu. Autor priniesol návrh UI (`dizajn.png`) a splash z OneDrive.
+
+### Hotové
+
+**Assets** – `assets/` s logom, splashom a ikonami. Rozpis v ALMANAC §1.
+- Splash: prvá verzia mala 9120 × 7402 px a 56 MB a mala vpálenú „verzia 1.0“. Autor ho upravil na 1624 × 1320 s prázdnou pravou časťou pruhu pre stav štartu.
+- Ikony vyrobil Claude skriptom (numpy + PyQt6 + `iconutil`, mimo repa): jeden `fukai.ico` s 9 veľkosťami namiesto štyroch samostatných súborov, `fukai.icns` s bielou dlaždicou podľa Apple mriežky. Pod 128 px je len symbol bez nápisu. Logo má biele pozadie, priehľadná verzia vznikla cez „color to alpha“.
+- Prvý pokus o oddelenie symbolu od nápisu našiel ako „medzeru“ spodný biely okraj a symbol vyšiel s nápisom – medzera sa musí hľadať len medzi prvým a posledným nepriehľadným riadkom.
+
+**Štart aplikácie** – `main.py`, `ui/application.py`, `ui/splash.py`, `ui/main_window.py`, `ui/constants.py`, `APP_VERSION`. Claude navrhol a otestoval v kópii v scratchpade, autor prepísal do repa. Rozhodnutia v ALMANAC §8 krok 9.
+
+**Merania na M2:** `load_settings` 0,001 s, `detect()` 0,03 s, `Database.connect()` 0,003 s – ale prvé `splash.show()` + `processEvents()` **1,08 s**. Od spustenia po hlavné okno ~3 s (1 s zobrazenie + 2 s minimum splashu).
+
+### Zistenia, ktoré stoja za zápis
+
+Pri prepisovaní vzniklo 9 chýb, z toho 4 tiché – zoznam v ALMANAC §8 krok 9 („Pasce pri písaní“). Spoločný vzor: **vec vs. jej zavolanie** (`SplashScreen` vs `SplashScreen()`, `isNull` vs `isNull()`) a **meno, ktoré Qt hľadá presne** (`drawContents`).
+
+| Zistenie | Prečo bolo zradné |
+|---|---|
+| `QMessageBox.setDetailedText` na macOS | Qt vypíše `qt.qpa.dialogs: Message box contains detailed text` – `detail` preto ide len do logu |
+| `check_ram` na 8 GB Macu | `ERROR` pri každom štarte (1,6 GB voľných, minimum 4 GB) → modálny dialóg vždy |
+| bracketed paste v zsh | kód vložený do terminálu za príkaz → `zsh: parse error`, nič sa nespustí |
+
+### Nedoriešené do ďalšej session
+
+1. **`check_ram`** – zmeniť na `WARNING` alebo porovnávať celkovú RAM; inak dialóg pri každom štarte na Macu.
+2. **Nezhody návrhu UI s ALMANAC-om** (§8 krok 9): modré vs zemité farby, „Cesta ku konverzáciam“, zoznam chatov ako stránka.
+3. Overiť na PC 1: ikona na paneli úloh (`SetCurrentProcessExplicitAppUserModelID`), PyQt6 v `.venv`.
+4. Krok 9 ďalej: kostra hlavného okna podľa návrhu (sidebar + `QStackedWidget`), potom worker.
+

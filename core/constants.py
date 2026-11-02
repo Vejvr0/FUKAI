@@ -1,6 +1,7 @@
 from pathlib import Path
 
 APP_NAME = "FUKAI"
+APP_VERSION = "1.0"
 SETTINGS_FILENAME = "settings.json"
 DB_FILENAME = "fukai.db"
 MODELS_DIRNAME = "models"
