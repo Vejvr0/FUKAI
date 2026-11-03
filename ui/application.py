@@ -31,6 +31,9 @@ class Application(QApplication):
     def __init__(self, argv: list[str]) -> None:
         _set_windows_app_id()
         super().__init__(argv)
+        # Vzhľad je celý z QSS – natívny štýl by pridal len rozdiely medzi OS
+        # (macOS si pri QPushButton necháva v layoute rezervu na tieň → tlačidlá sa prekrývajú).
+        self.setStyle("Fusion")
         self.setApplicationName(APP_NAME)
         self.setApplicationVersion(APP_VERSION)
         icon = ICNS if sys.platform == "darwin" else ICO

@@ -76,7 +76,7 @@ class Sidebar(QFrame):
         
         top = QVBoxLayout()
         top.setContentsMargins(16, 20, 16, 0)
-        top.setSpacing(16)
+        top.setSpacing(8)
         top.addWidget(self._logo)
         top.addSpacing(12)
         for button in self._tabs.buttons():
