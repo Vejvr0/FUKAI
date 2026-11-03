@@ -1,0 +1,60 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 600">
+          
+          <!-- Layer 4: Distant Background Peaks & Geometric Sun Accent -->
+          <g id="layer-distant-peaks">
+            <!-- Geometric Minimalist Sun / Compass Accent -->
+            <circle cx="800" cy="180" r="45" fill="none" stroke="#00A896" stroke-width="3" opacity="0.4"/>
+            <circle cx="800" cy="180" r="6" fill="#00A896" opacity="0.7"/>
+
+            <!-- Distant Farthest Ridge (#00A896 - Light Cyan/Teal) -->
+            <polygon points="&#10;              -50,600 &#10;              -50,420 120,310 260,380 410,240 580,360 720,220 880,330 1020,190 1190,320 1350,210 1520,340 1650,260 1650,600&#10;            " fill="#00A896" opacity="0.35"/>
+          </g>
+
+          <!-- Layer 3: Back Mountain Ridge (#028090 - Petroleum Blue) -->
+          <g id="layer-back-ridge">
+            <!-- Crisp angular mountain faces -->
+            <polygon points="&#10;              -50,600 &#10;              -50,480 90,360 220,430 380,290 530,390 680,270 820,380 960,250 1120,370 1280,240 1460,390 1650,300 1650,600&#10;            " fill="#028090" opacity="0.65"/>
+            <!-- Geometric Facet Highlights for 3D/Crisp effect -->
+            <polygon points="380,290 530,390 380,450" fill="#00A896" opacity="0.25"/>
+            <polygon points="680,270 820,380 680,430" fill="#00A896" opacity="0.25"/>
+            <polygon points="960,250 1120,370 960,420" fill="#00A896" opacity="0.25"/>
+            <polygon points="1280,240 1460,390 1280,430" fill="#00A896" opacity="0.25"/>
+          </g>
+
+          <!-- Layer 2: Midground Mountain Ridge (#00458B - Royal Navy Blue) -->
+          <g id="layer-mid-ridge">
+            <polygon points="&#10;              -50,600 &#10;              -50,520 160,390 310,470 480,330 630,420 780,310 940,430 1100,290 1260,400 1420,320 1650,440 1650,600&#10;            " fill="#00458B"/>
+            <!-- Shading Facets -->
+            <polygon points="480,330 630,420 480,480" fill="#028090" opacity="0.4"/>
+            <polygon points="780,310 940,430 780,500" fill="#028090" opacity="0.4"/>
+            <polygon points="1100,290 1260,400 1100,480" fill="#028090" opacity="0.4"/>
+          </g>
+
+          <!-- Layer 1: Foreground Sharp Peaks (#001B48 - Deep Dark Navy) -->
+          <g id="layer-foreground-peaks">
+            <polygon points="&#10;              -50,600 &#10;              -50,560 60,460 210,530 360,400 520,500 690,370 850,480 1010,350 1180,490 1340,380 1510,480 1650,390 1650,600&#10;            " fill="#001B48"/>
+            
+            <!-- Sharp Front Ridge Highlights -->
+            <polygon points="360,400 520,500 360,540" fill="#00458B" opacity="0.5"/>
+            <polygon points="690,370 850,480 690,530" fill="#00458B" opacity="0.5"/>
+            <polygon points="1010,350 1180,490 1010,540" fill="#00458B" opacity="0.5"/>
+            <polygon points="1340,380 1510,480 1340,530" fill="#00458B" opacity="0.5"/>
+
+            <!-- Geometric Pine Tree Silhouette Accents along foreground -->
+            <polygon points="110,510 120,480 130,510" fill="#001B48"/>
+            <polygon points="113,495 120,470 127,495" fill="#001B48"/>
+            
+            <polygon points="270,520 282,485 294,520" fill="#001B48"/>
+            <polygon points="274,500 282,475 290,500" fill="#001B48"/>
+
+            <polygon points="590,470 602,430 614,470" fill="#001B48"/>
+            <polygon points="594,450 602,420 610,450" fill="#001B48"/>
+
+            <polygon points="1230,510 1242,470 1254,510" fill="#001B48"/>
+            <polygon points="1234,490 1242,460 1250,490" fill="#001B48"/>
+          </g>
+
+          <!-- Framing Line at Base -->
+          <line x1="0" y1="595" x2="1600" y2="595" stroke="#001B48" stroke-width="6"/>
+
+        </svg>

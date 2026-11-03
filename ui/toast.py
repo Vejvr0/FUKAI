@@ -4,7 +4,7 @@ from PyQt6.QtWidgets import (
     QFrame, QHBoxLayout, QLabel, QProgressBar, QPushButton, QVBoxLayout, QWidget,
 )
 from core.errors import Notice, Severity
-from ui.constants import TOAST_WIDTH, TOAST_MARGIN, TOAST_SPACING, TOAST_TIMELINE_STEPS
+from ui.constants import TOAST_WIDTH, TOAST_TOP, TOAST_RIGHT, TOAST_SPACING, TOAST_TIMELINE_STEPS
 
 __all__ = ["Toast", "ToastHost"]
 
@@ -33,9 +33,9 @@ class Toast(QFrame):
         
         title = QLabel(TITLES[notice.severity])
         title.setObjectName("toastTitle")
-        close = QPushButton("x")
+        close = QPushButton("×")
         close.setObjectName("toastClose")
-        close.setFixedSize(20, 20)
+        close.setFixedSize(16, 16)
         close.setCursor(Qt.CursorShape.PointingHandCursor)
         close.clicked.connect(self.dismiss)
         
@@ -44,8 +44,8 @@ class Toast(QFrame):
         header.addWidget(close)
         
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(14, 10, 10, 10)
-        layout.setSpacing(4)
+        layout.setContentsMargins(12, 8, 8, 8)
+        layout.setSpacing(2)
         layout.addLayout(header)
         layout.addWidget(self._label(notice.message, "toastMessage"))
         if notice.hint:
@@ -57,10 +57,10 @@ class Toast(QFrame):
             bar = QProgressBar()
             bar.setObjectName("toastTimeline")
             bar.setTextVisible(False)
-            bar.setFixedHeight(3)
+            bar.setFixedHeight(2)
             bar.setRange(0, TOAST_TIMELINE_STEPS)
             bar.setValue(TOAST_TIMELINE_STEPS)
-            layout.addSpacing(4)
+            layout.addSpacing(6)
             layout.addWidget(bar)
             
             self._timeline = QTimeLine(duration, self)
@@ -69,8 +69,6 @@ class Toast(QFrame):
             self._timeline.frameChanged.connect(bar.setValue)
             self._timeline.finished.connect(self.dismiss)
 
-        # adjustSize() by výšku zalomeného textu odhadol pred poznaním šírky
-        # a prebytok rozdelil medzi riadky – výška sa preto počíta pre pevnú šírku.
         self.setFixedHeight(self.heightForWidth(TOAST_WIDTH))
     
     
@@ -135,8 +133,8 @@ class ToastHost(QObject):
     
     
     def _relayout(self) -> None:
-        x = self._window.width() - TOAST_WIDTH - TOAST_MARGIN
-        y = TOAST_MARGIN
+        x = self._window.width() - TOAST_WIDTH - TOAST_RIGHT
+        y = TOAST_TOP
         for toast in self._toasts:
             toast.move(x, y)
             y += toast.height() + TOAST_SPACING

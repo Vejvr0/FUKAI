@@ -4,8 +4,14 @@ ASSETS_DIR = Path(__file__).resolve().parent.parent / "assets"
 SPLASH_IMAGE = ASSETS_DIR / "splash_screen.png"
 ICO = ASSETS_DIR / "ico" / "fukai.ico"
 ICNS = ASSETS_DIR / "icns" / "fukai.icns"
+ICONS_DIR = ASSETS_DIR / "icons"
 LOGO = ASSETS_DIR / "logo.png"
 LOGO_TRANSPARENT = ASSETS_DIR / "logo_transparent.png"
+SIDEBAR_LOGO = {
+    "light": ASSETS_DIR / "logo_sidebar_light.png",
+    "dark": ASSETS_DIR / "logo_sidebar_dark.png"
+}
+HILLS = ASSETS_DIR / "hills.svg"
 SPLASH_WIDTH = 800
 SPLASH_TIME = 2000
 SPLASH_BAR_TOP = 1266 / 1320
@@ -16,7 +22,14 @@ SPLASH_TEXT_COLOR = "#ffffff"
 WINDOW_SIZE = (1100, 720)
 WINDOW_MIN_SIZE = (800, 560)
 WINDOWS_APP_ID = "FEIT.FUKAI"
-TOAST_WIDTH = 360
-TOAST_MARGIN = 16
-TOAST_SPACING = 8
+SIDEBAR_WIDTH = 272
+SIDEBAR_LOGO_WIDTH = 132
+ICON_SIZE = 18
+CHAT_ITEM_HEIGHT = 34
+PANEL_MARGIN = 12
+HEADER_HEIGHT = 56
+TOAST_WIDTH = 320
+TOAST_TOP = PANEL_MARGIN + HEADER_HEIGHT + 8
+TOAST_RIGHT = PANEL_MARGIN + 12
+TOAST_SPACING = 6
 TOAST_TIMELINE_STEPS = 1000

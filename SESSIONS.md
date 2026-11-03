@@ -396,3 +396,34 @@ Pri prepisovaní vzniklo 9 chýb, z toho 4 tiché – zoznam v ALMANAC §8 krok 
 3. Overiť na PC 1: ikona na paneli úloh (`SetCurrentProcessExplicitAppUserModelID`), PyQt6 v `.venv`.
 4. Krok 9 ďalej: kostra hlavného okna podľa návrhu (sidebar + `QStackedWidget`), potom worker.
 
+
+## 2026-11-02 / 03 – MacBook: toasty, šablóna UI, kostra okna a témy (krok 9, kúsky 2–3)
+
+**Stav na začiatku:** kúsok 1 (štart aplikácie) commitnutý (`913ccef`), `Notice` sa hlásili modálnym dialógom.
+
+### Hotové
+
+**Kúsok 2 – toasty** (`ui/toast.py`, commit `54e7150`). Autor prepísal, pri spustení spadol na `event.Type()`; na žiadosť autora („oprav chyby ty“) Claude opravil 7 chýb priamo v repe. `check_ram` zmenený na `WARNING`. Dohodnuté: toasty pre všetky hlásenia, `QMessageBox` len pre fatálnu chybu pri štarte.
+
+**Šablóna UI** – autor pripravil HTML/CSS šablónu na OneDrive (`semestralka/UI/template/`), od 2026-11-02 záväzná. Zmeny autora oproti nej: v sidebare len skupina „Posledné“, 3 taby + nový chat, model sa dá meniť aj v rozpísanom chate (bez zámku). Zapísané v ALMANAC §8 krok 9.
+
+**Kúsok 3 – kostra okna a témy** (`ui/style.py`, `icons.py`, `sidebar.py`, `chat_view.py`, `main_window.py` + assety). Claude navrhol a otestoval v scratchpade, autor prepísal, Claude skontroloval: 6 chýb (2 pády, 4 tiché), zoznam v ALMANAC. Toasty prevedené na tokeny tém, menšie a presunuté pod hlavičku panelu.
+
+**Windows ikona** – `assets/ico/fukai.ico` prerobená na bielu zaoblenú dlaždicu ako na Macu (na želanie autora), dlaždica takmer cez celé plátno.
+
+### Zistenia, ktoré stoja za zápis
+
+| Zistenie | Prečo bolo zradné |
+|---|---|
+| test okno na skutočnej obrazovke | myš autora pozastavovala / zatvárala toasty a vyzeralo to ako chyba → testy UI odvtedy s `QT_QPA_PLATFORM=offscreen` |
+| testovací skript v adresári s kópiou `ui/` | Python importuje najprv z adresára skriptu, takže test bežal nad kópiou zo scratchpadu, nie nad repom – skripty spúšťať z prázdneho adresára s `PYTHONPATH=<repo>` |
+| pomocný skript `inspect.py` | prekryl štandardný modul `inspect` a numpy padol pri importe – nepomenúvať skripty podľa modulov stdlib |
+| `QButtonGroup` | tlačidlo nevlastní; bez rodiča ho Python zruší |
+| `setCheckable` / `setChecked`, `addSpacing` / `setSpacing` | dvojice platných mien, zámena je tichá |
+
+### Nedoriešené do ďalšej session
+
+1. **Commit** kúsku 3 + `fukai.ico` + ALMANAC (autor).
+2. Kúsok 3b – menu ⋯ (premenovať / vymazať), potom kúsok 4 – správy a composer. Plán v ALMANAC §8 krok 9 „Ďalej v kroku 9“.
+3. Overiť na PC 1: PyQt6, ikona na paneli úloh.
+4. Nerozhodnuté: `sys.excepthook`, generátor ikon do repa.
