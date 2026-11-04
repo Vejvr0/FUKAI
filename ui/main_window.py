@@ -3,7 +3,6 @@ from PyQt6.QtWidgets import (
     QMainWindow, QFrame, QLabel, QHBoxLayout, QVBoxLayout, QStackedWidget, QWidget
 )
 from PyQt6.QtCore import Qt
-from core.app_settings import AppSettings
 from core.constants import APP_NAME
 from core.hardware import HardwareProfile
 from core.errors import Notice
@@ -12,14 +11,16 @@ from ui.chat_controller import ChatController
 from ui.chat_view import ChatView
 from ui.sidebar import Sidebar, PAGE_CHAT
 from ui.constants import WINDOW_MIN_SIZE, WINDOW_SIZE, PANEL_MARGIN
+from ui.model_library import ModelLibrary
+from ui.settings_store import SettingsStore
 from ui.toast import Toast, ToastHost
 
 __all__ = ["MainWindow"]
 
 
 class MainWindow(QMainWindow):
-    def __init__(self, settings: AppSettings, hardware: HardwareProfile, database: Database,
-                 controller: ChatController) -> None:
+    def __init__(self, settings: SettingsStore, hardware: HardwareProfile, database: Database,
+                 controller: ChatController, library: ModelLibrary) -> None:
         super().__init__()
         self._controller = controller
         self._loading_toast: Toast | None = None
@@ -68,9 +69,23 @@ class MainWindow(QMainWindow):
         controller.loading_started.connect(self._on_loading_started)
         controller.loading_finished.connect(self._on_loading_finished)
         
+        composer = self._chat.composer
+        composer.set_model_source(library.models)
+        composer.send_requested.connect(controller.send)
+        composer.stop_requested.connect(controller.stop)
+        composer.model_selected.connect(controller.select_model)
+        controller.busy_changed.connect(composer.set_busy)
+        controller.model_changed.connect(composer.set_model)
+        controller.turn_started.connect(composer.begin_turn)
+        controller.turn_finished.connect(composer.end_turn)
+        controller.turn_rolled_back.connect(composer.roll_back)
+        controller.loading_started.connect(lambda _title: composer.set_loading(True))
+        controller.loading_finished.connect(lambda: composer.set_loading(False))
+        
         self._toast = ToastHost(self)
-        self.apply_theme(settings.theme)
+        self.apply_theme(settings.current.theme)
         self.reload_chats()
+        controller.new_chat()                   # štart = prázdny chat s posledným modelom
         
 
     @staticmethod
@@ -83,6 +98,7 @@ class MainWindow(QMainWindow):
     
     def apply_theme(self, theme: str) -> None:
         self._sidebar.set_theme(theme)
+        self._chat.set_theme(theme)
         
     
     def reload_chats(self) -> None:
@@ -103,7 +119,9 @@ class MainWindow(QMainWindow):
     def _on_chat_opened(self, chat_id: int | None, title: str, messages: list[dict]) -> None:
         self._sidebar.select_chat(chat_id)
         self._chat.set_title(title)
-        self._show_page(PAGE_CHAT)              # správy vykreslí ChatView v kúsku 4c
+        self._chat.composer.end_turn()          # bežiaci ťah tohto chatu controller hneď ohlási znova
+        self._show_page(PAGE_CHAT)              # správy vykreslí ChatView v ďalšom kúsku
+        self._chat.composer.focus_input()
 
 
     def _on_chats_changed(self, selected: int | None) -> None:

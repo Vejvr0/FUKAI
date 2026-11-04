@@ -1,6 +1,8 @@
+import re
 from string import Template
+from PyQt6.QtGui import QColor
 
-__all__ = ["THEMES", "stylesheet"]
+__all__ = ["THEMES", "qcolor", "stylesheet"]
 
 THEMES: dict[str, dict[str, str]] = {
     "light": {
@@ -147,7 +149,67 @@ _QSS = Template("""
     QProgressBar#toastTimeline        { border: none; background: $chip; border-radius: 1px; }
     QProgressBar#toastTimeline::chunk { background: $accent; border-radius: 1px; }
     QFrame#toast[severity="warning"] QProgressBar#toastTimeline::chunk { background: $warning; }
+    QWidget#composerColumn { background: transparent; }
+    QFrame#composer {
+        background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 $glass_top, stop:1 $glass_bottom);
+        border: 1px solid $glass_border;
+        border-radius: 24px;
+    }
+    QFrame#composer[focused="true"] { border-color: $accent; }
+    QPlainTextEdit#composerInput {
+        background: transparent; border: none; padding: 0;
+        color: $text; font-size: 15px;
+        selection-background-color: $accent; selection-color: #0D1E48;
+    }
+    QLabel#composerHint { color: $text_muted; font-size: 12px; }
+    QLabel#composerFoot { color: $text_muted; font-size: 11px; }
+
+    QToolButton#roundButton, QToolButton#modelPill {
+        background: $chip; border: none; border-radius: 18px; color: $text;
+    }
+    QToolButton#roundButton:hover, QToolButton#modelPill:hover { background: $chip_hover; }
+    QToolButton#roundButton:disabled, QToolButton#modelPill:disabled { background: $chip; }
+    QLabel#pillText { font-size: 14px; font-weight: 600; }
+    QLabel#pillText:disabled { color: $text_muted; }
+
+    QToolButton#send { background: $send; border: none; border-radius: 18px; }
+    QToolButton#send:hover { background: $send_hover; }
+    QToolButton#send:disabled { background: $chip; }
+
+    QMenu#modelMenu {
+        background: $menu;
+        border: 1px solid $glass_border;
+        border-radius: 14px;
+        padding: 6px;
+        color: $text;
+    }
+    QMenu#modelMenu::item { padding: 8px 10px; border-radius: 9px; color: $text; }
+    QMenu#modelMenu::item:selected { background: $chip; }
+    QMenu#modelMenu::item:disabled { color: $text_muted; }
+    QMenu#modelMenu::separator { height: 1px; background: $line; margin: 4px 6px; }
+    QLabel#menuLabel {
+        color: $text_muted; font-size: 11px; font-weight: 600;
+        padding: 6px 10px 4px 10px;
+    }
+    QFrame#modelRow { border-radius: 9px; background: transparent; }
+    QFrame#modelRow:hover { background: $chip; }
+    QLabel#modelName { font-weight: 600; }
+    QLabel#modelSub  { color: $text_muted; font-size: 12px; }
+    QLabel#modelEmpty { color: $text_muted; padding: 8px 10px; }
 """)
+
+_RGBA = re.compile(r"rgba\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*([\d.]+)\s*\)")
+
+
+def qcolor(value: str) -> QColor:
+    """Token témy → QColor. Treba tam, kam QSS nesiaha (tieň, placeholder); QColor sám
+    zápis `rgba(r, g, b, 0.58)` z CSS nepozná – vráti neplatnú farbu, teda čiernu."""
+    match = _RGBA.fullmatch(value.strip())
+    if match is None:
+        return QColor(value)
+    r, g, b, a = match.groups()
+    return QColor(int(r), int(g), int(b), round(float(a) * 255))
+
 
 def stylesheet(theme: str) -> str:
     return _QSS.substitute(THEMES[theme])

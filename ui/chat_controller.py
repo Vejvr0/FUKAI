@@ -1,7 +1,6 @@
 from __future__ import annotations
 from dataclasses import dataclass, field
 from PyQt6.QtCore import QObject, pyqtSignal
-from core.app_settings import AppSettings
 from core.context import HistoryItem
 from core.hardware import HardwareProfile
 from core.llm_engine import FinishReason
@@ -11,6 +10,7 @@ from storage.database import Database
 from ui.constants import TITLE_WORDS, NEW_CHAT_TITLE
 from ui.llm_service import LlmService
 from ui.workers import GenerationResult
+from ui.settings_store import SettingsStore
 
 __all__ = ["ChatController"]
 
@@ -39,9 +39,10 @@ class ChatController(QObject):
     turn_finished = pyqtSignal(object)
     turn_rolled_back = pyqtSignal(str)
     notice = pyqtSignal(object)
+    model_changed = pyqtSignal(object)
 
 
-    def __init__(self, settings: AppSettings, hardware: HardwareProfile, database: Database, llm: LlmService, parent: QObject | None = None) -> None:
+    def __init__(self, settings: SettingsStore, hardware: HardwareProfile, database: Database, llm: LlmService, parent: QObject | None = None) -> None:
         super().__init__(parent)
         self._settings = settings
         self._hardware = hardware
@@ -50,7 +51,7 @@ class ChatController(QObject):
         
         self._view = 0
         self._chat_id: int | None = None
-        self._model_id: int | None = settings.last_model_id
+        self._model_id: int | None = settings.current.last_model_id
         self._turn: _Turn | None = None
         self._loaded: LoadParams | None = None
         
@@ -85,8 +86,9 @@ class ChatController(QObject):
     def new_chat(self) -> None:
         self._view += 1
         self._chat_id = None
-        self._model_id = self._settings.last_model_id
+        self._model_id = self._settings.current.last_model_id
         self.chat_opened.emit(None, NEW_CHAT_TITLE, [])
+        self._emit_model()
     
     
     def open_chat(self, chat_id: int) -> None:
@@ -100,6 +102,7 @@ class ChatController(QObject):
         self._chat_id = chat_id
         self._model_id = chat["model_id"]
         self.chat_opened.emit(chat_id, chat["title"], self._database.get_messages(chat_id))
+        self._emit_model()
         
         turn = self._turn
         if turn is not None and turn.chat_id == chat_id:
@@ -114,9 +117,16 @@ class ChatController(QObject):
         model = self._database.get_model(model_id)
         if model is None:
             raise ValueError(f"model {model_id} neexistuje")
-        self._model_id = model_id
-        if self._chat_id is not None:
-            self._database.set_model(self._chat_id, model_id, self._defaults(model).to_dict())
+        if model_id == self._model_id:
+            return
+        try:
+            if self._chat_id is not None:
+                self._database.set_model(self._chat_id, model_id, self._defaults(model).to_dict())
+            self._model_id = model_id
+            self._settings.update(last_model_id=model_id)
+        except FukaiError as exc:
+            self.notice.emit(exc.as_notice())
+        self._emit_model()
             
     
     def send(self, text: str) -> None:
@@ -264,7 +274,12 @@ class ChatController(QObject):
             
     
     def _model_path(self, model: dict):
-        return self._settings.models_dir / model["path"]
+        return self._settings.current.models_dir / model["path"]
+    
+    
+    def _emit_model(self) -> None:
+        model = self._database.get_model(self._model_id) if self._model_id is not None else None
+        self.model_changed.emit(model)
 
 
     def _defaults(self, model: dict) -> ChatProperties:

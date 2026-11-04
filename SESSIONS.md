@@ -457,3 +457,29 @@ Pri prepisovaní vzniklo 9 chýb, z toho 4 tiché – zoznam v ALMANAC §8 krok 
 1. **Commit** kúsku 4b + ALMANAC + SESSIONS (autor).
 2. **Ďalej: kúsok 4c** – composer a správy (napojiť na signály `ChatController`); potom kúsok 3b – menu ⋯ (vrátane mazania chatu počas odpovede).
 3. Overiť na PC 1 (zoznam v ALMANAC „Ďalej v kroku 9“).
+
+## 2026-11-04 – MacBook: composer a výber modelu (krok 9, kúsok 5a)
+
+**Stav na začiatku:** kúsok 4b commitnutý (`c1e4a68`), v UI chýba composer.
+
+### Hotové
+
+**Kúsok 5a – composer a výber modelu.** Poradie zmenené na želanie autora (composer + modely pred zoznamom správ). Claude navrhol a otestoval v scratchpade (`ui/composer.py`, `ui/settings_store.py`, `ui/model_library.py`, zmeny v controlleri, štýle, ikonách a zapojení). Autor prepísal väčšinu, Claude opravil 7 chýb (zoznam v ALMANAC), doplnil `style.py` a zapojenie (`chat_view`, `main_window`, `application`). Testy nad repom: UI offscreen 15/15, výber modelu 7/7, `test_controller.py` 8/8.
+
+Rozhodnutia autora pre 5c: kôš v riadku menu pod myšou, mazanie aj kópie súboru, import s trvalým toastom s priebehom; + a Web zobrazené, ale vypnuté.
+
+### Zistenia, ktoré stoja za zápis
+
+| Zistenie | Prečo bolo zradné |
+|---|---|
+| `QToolButton.sizeHint()` nevidí vlastný layout | tlačidlo modelu bolo bez textu – vlastný `sizeHint()` |
+| `setAlignment(widget, AlignHCenter)` | widget dostane len `sizeHint`, composer bol úzky – centrovanie stretchmi |
+| tieň `QGraphicsDropShadowEffect` | oreže sa na hranice rodiča – stĺpec potrebuje okraj |
+| `QColor("rgba(…)")` | neplatná farba → čierna; `qcolor()` |
+| Shift+Enter v `QPlainTextEdit` | vkladá `U+2028`, nie `\n` |
+
+### Nedoriešené do ďalšej session
+
+1. Test autora v živom okne (cocoa) – hlavne zaoblené menu modelov a tieň composera; potom commit.
+2. Kúsok 5b – `core/gguf.py` (čítač hlavičky), potom 5c – import a mazanie modelu.
+3. Zoznam správ, kúsok 3b (menu ⋯), overenie na PC 1.
