@@ -24,7 +24,7 @@ class Toast(QFrame):
     closed = pyqtSignal(object)
     
     
-    def __init__(self, notice: Notice, parent: QWidget) -> None:
+    def __init__(self, notice: Notice, parent: QWidget, *, persistent: bool = False) -> None:
         super().__init__(parent)
         self.setObjectName("toast")
         self.setProperty("severity", notice.severity.value)
@@ -52,7 +52,7 @@ class Toast(QFrame):
             layout.addWidget(self._label(notice.hint, "toastHint"))
             
         self._timeline: QTimeLine | None = None
-        duration = DURATIONS[notice.severity]
+        duration = 0 if persistent else DURATIONS[notice.severity]     # 0 = bez časovej osi, zavrie ho volajúci
         if duration:
             bar = QProgressBar()
             bar.setObjectName("toastTimeline")
@@ -117,14 +117,17 @@ class ToastHost(QObject):
         window.installEventFilter(self)
     
     
-    def show_notice(self, notice: Notice) -> None:
-        toast = Toast(notice, self._window)
+    def show_notice(self, notice: Notice, *, persistent: bool = False) -> Toast:
+        """`persistent=True` – toast sa sám nezavrie (napr. „Načítavam model…“); volajúci si ho
+        podrží a zavolá `dismiss()`. Opakovaný dismiss() je neškodný – aj keď ho medzitým zavrel ✕."""
+        toast = Toast(notice, self._window, persistent=persistent)
         toast.closed.connect(self._remove)
         self._toasts.append(toast)
         toast.show()
         toast.raise_()
         self._relayout()
         toast.start()
+        return toast
     
     
     def _remove(self, toast: Toast) -> None:

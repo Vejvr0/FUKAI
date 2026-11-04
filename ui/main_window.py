@@ -8,17 +8,21 @@ from core.constants import APP_NAME
 from core.hardware import HardwareProfile
 from core.errors import Notice
 from storage.database import Database
+from ui.chat_controller import ChatController
 from ui.chat_view import ChatView
 from ui.sidebar import Sidebar, PAGE_CHAT
 from ui.constants import WINDOW_MIN_SIZE, WINDOW_SIZE, PANEL_MARGIN
-from ui.toast import ToastHost
+from ui.toast import Toast, ToastHost
 
 __all__ = ["MainWindow"]
 
 
 class MainWindow(QMainWindow):
-    def __init__(self, settings: AppSettings, hardware: HardwareProfile, database: Database) -> None:
+    def __init__(self, settings: AppSettings, hardware: HardwareProfile, database: Database,
+                 controller: ChatController) -> None:
         super().__init__()
+        self._controller = controller
+        self._loading_toast: Toast | None = None
         self._settings = settings
         self._hardware = hardware
         self._database = database
@@ -56,8 +60,13 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(central)
         
         self._sidebar.page_changed.connect(self._pages.setCurrentIndex)
-        self._sidebar.new_chat_request.connect(self._new_chat)
-        self._sidebar.chat_selected.connect(self._open_chat)
+        self._sidebar.new_chat_request.connect(controller.new_chat)
+        self._sidebar.chat_selected.connect(controller.open_chat)
+        controller.chat_opened.connect(self._on_chat_opened)
+        controller.chats_changed.connect(self._on_chats_changed)
+        controller.notice.connect(self.show_notice)
+        controller.loading_started.connect(self._on_loading_started)
+        controller.loading_finished.connect(self._on_loading_finished)
         
         self._toast = ToastHost(self)
         self.apply_theme(settings.theme)
@@ -82,8 +91,8 @@ class MainWindow(QMainWindow):
         self._sidebar.set_chats(chats)
     
            
-    def show_notice(self, notice: Notice) -> None:
-        self._toast.show_notice(notice)
+    def show_notice(self, notice: Notice, *, persistent: bool = False) -> Toast:
+        return self._toast.show_notice(notice, persistent=persistent)
     
     
     def _show_page(self, page: int) -> None:
@@ -91,13 +100,26 @@ class MainWindow(QMainWindow):
         self._pages.setCurrentIndex(page)
     
     
-    def _new_chat(self) -> None:
-        self._sidebar.select_chat(None)
-        self._chat.set_title("Nový chat")
-        self._show_page(PAGE_CHAT)
-    
-    
-    def _open_chat(self, chat_id: int) -> None:
-        self._chat.set_title(self._chats[chat_id]["title"])
-        self._show_page(PAGE_CHAT)
+    def _on_chat_opened(self, chat_id: int | None, title: str, messages: list[dict]) -> None:
+        self._sidebar.select_chat(chat_id)
+        self._chat.set_title(title)
+        self._show_page(PAGE_CHAT)              # správy vykreslí ChatView v kúsku 4c
+
+
+    def _on_chats_changed(self, selected: int | None) -> None:
+        self.reload_chats()
+        self._sidebar.select_chat(selected)
+        if selected is not None and selected == self._controller.chat_id:
+            self._chat.set_title(self._chats[selected]["title"])     # nový chat dostal názov
+
+
+    def _on_loading_started(self, model_title: str) -> None:
+        notice = Notice.info("Načítavam model…", hint=f"{model_title} – prvé načítanie môže trvať aj desiatky sekúnd.")
+        self._loading_toast = self.show_notice(notice, persistent=True)
+
+
+    def _on_loading_finished(self) -> None:
+        if self._loading_toast is not None:
+            self._loading_toast.dismiss()       # neškodné, aj keď ho používateľ zavrel ✕
+            self._loading_toast = None
     

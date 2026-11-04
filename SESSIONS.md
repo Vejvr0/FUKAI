@@ -427,3 +427,33 @@ Pri prepisovaní vzniklo 9 chýb, z toho 4 tiché – zoznam v ALMANAC §8 krok 
 2. Kúsok 3b – menu ⋯ (premenovať / vymazať), potom kúsok 4 – správy a composer. Plán v ALMANAC §8 krok 9 „Ďalej v kroku 9“.
 3. Overiť na PC 1: PyQt6, ikona na paneli úloh.
 4. Nerozhodnuté: `sys.excepthook`, generátor ikon do repa.
+
+
+## 2026-11-03 / 04 – MacBook: Fusion, worker a služba, tok správy (krok 9, kúsky 4a–4b)
+
+**Stav na začiatku:** kúsok 3 commitnutý (`8b23db4`), UI bez modelu.
+
+### Hotové
+
+**Rozostupy na macOS** – autorovo riešenie podľa OS vrátené, namiesto neho `setStyle("Fusion")` (`7df1ae9`). Príčina: natívny štýl `macos` hlási menší layout rect tlačidla.
+
+**Kúsok 4a – `ui/workers.py`, `ui/llm_service.py`** (`151f9d5`). Claude navrhol, autor prepísal, Claude opravil 3 chyby (`load_failed` v úspešnej vetve, `self.tokens`, `time.monotronic`).
+
+**Kúsok 4b – `ui/chat_controller.py` a tok správy.** Lazy načítanie modelu pri odoslaní, trvalý info toast počas načítania, názov chatu = 15 slov, zápis ťahu jednou transakciou (`add_turn`). Autor prepísal controller a databázu, Claude opravil 8 chýb (zoznam v ALMANAC) a na žiadosť autora dorobil `toast.py`, `main_window.py`, `application.py`, `tools/dev_add_model.py`.
+
+### Zistenia, ktoré stoja za zápis
+
+| Zistenie | Prečo bolo zradné |
+|---|---|
+| `except Exception` v slote workera | preklep v kóde sa tvári ako chyba modelu (toast), nie ako pád |
+| queued stop slot | príde až po konci odpovede – Stop musí obísť frontu |
+| Metal + model načítaný pri `exit()` | `GGML_ASSERT` pri ukončení – každá cesta von cez `shutdown()` |
+| `devdata` bez zaregistrovaného modelu | prvý test nad repom skončil na „Najprv vyber model“ – nie chyba kódu; testy bežia s vlastným `FUKAI_HOME` v scratchpade |
+
+**Na konci session:** autor spustil appku na M2 (štart v poriadku) a zaregistroval Gemmu do `devdata` cez `tools/dev_add_model`. Chatovať sa ešte nedá – v UI chýba composer a zoznam správ, controller pod tým je hotový a otestovaný.
+
+### Nedoriešené do ďalšej session
+
+1. **Commit** kúsku 4b + ALMANAC + SESSIONS (autor).
+2. **Ďalej: kúsok 4c** – composer a správy (napojiť na signály `ChatController`); potom kúsok 3b – menu ⋯ (vrátane mazania chatu počas odpovede).
+3. Overiť na PC 1 (zoznam v ALMANAC „Ďalej v kroku 9“).

@@ -12,6 +12,9 @@ SIDEBAR_LOGO = {
     "dark": ASSETS_DIR / "logo_sidebar_dark.png"
 }
 HILLS = ASSETS_DIR / "hills.svg"
+TITLE_WORDS = 15
+NEW_CHAT_TITLE = "Nový chat"
+ICON_GAP = "  "
 SPLASH_WIDTH = 800
 SPLASH_TIME = 2000
 SPLASH_BAR_TOP = 1266 / 1320

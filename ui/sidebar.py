@@ -5,7 +5,7 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import QSize, Qt, pyqtSignal
 from PyQt6.QtSvgWidgets import QSvgWidget
 from ui.constants import (
-    CHAT_ITEM_HEIGHT, HILLS, ICON_SIZE, SIDEBAR_LOGO, SIDEBAR_LOGO_WIDTH, SIDEBAR_WIDTH
+    CHAT_ITEM_HEIGHT, HILLS, ICON_SIZE, SIDEBAR_LOGO, SIDEBAR_LOGO_WIDTH, SIDEBAR_WIDTH, ICON_GAP
 )
 from ui.icons import icon, pixmap
 from ui.style import THEMES
@@ -24,7 +24,6 @@ TABS = (
     (PAGE_SETTINGS, "gear", "Nastavenia")
 )
 CHAT_ID = Qt.ItemDataRole.UserRole
-ICON_GAP = "  "
 
 
 class Sidebar(QFrame):

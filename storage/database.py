@@ -177,6 +177,25 @@ class Database:
             message_id = conn.execute("INSERT INTO content (data, tokens, role, chat_id) VALUES (?, ?, ?, ?)", (json.dumps(data), tokens, role, chat_id)).lastrowid
             conn.execute("UPDATE chats SET updated_at = (datetime('now')) WHERE id = ?", (chat_id,))
         return message_id
+    
+    
+    def add_turn(self, chat_id: int | None, question: dict, answer: dict, *, answer_tokens: int | None = None, new_chat: tuple[int, str, dict] | None = None) -> int:
+        if chat_id is None and new_chat is None:
+            raise ValueError("add_turn bez chat_id potrebuje new_chat")
+        with self.transaction() as conn:
+            if chat_id is None:
+                model_id, title, properties = new_chat
+                chat_id = conn.execute("INSERT INTO chats (title, model_id) VALUES (?, ?)", (title, model_id)).lastrowid
+                conn.execute("INSERT INTO properties (chat_id, data) VALUES (?, ?)", (chat_id, json.dumps(properties)))
+            conn.execute("INSERT INTO content (data, tokens, role, chat_id) VALUES (?, NULL, 'user', ?)", (json.dumps(question), chat_id))
+            conn.execute("INSERT INTO content (data, tokens, role, chat_id) VALUES (?, ?, 'assistant', ?)", (json.dumps(answer), answer_tokens, chat_id))
+            conn.execute("UPDATE chats SET updated_at = (datetime('now')) WHERE id = ?", (chat_id,))
+        return chat_id
+    
+    
+    def get_chat(self, chat_id: int) -> dict | None:
+        rows = self.query("SELECT * FROM chats WHERE id = ?", (chat_id,))
+        return rows[0] if rows else None
 
 
     def remove_message(self, message_id: int) -> None:

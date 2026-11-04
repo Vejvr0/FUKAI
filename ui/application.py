@@ -9,6 +9,7 @@ from core.constants import APP_NAME, APP_VERSION
 from core.hardware import HardwareProfile, check_cores, check_gpu, check_os, check_ram, detect
 from core.errors import FukaiError, Notice
 from storage.database import Database
+from ui.chat_controller import ChatController
 from ui.llm_service import LlmService
 from ui.constants import ICNS, ICO, SPLASH_TIME, WINDOWS_APP_ID
 from ui.main_window import MainWindow
@@ -42,6 +43,7 @@ class Application(QApplication):
         self.hardware: HardwareProfile | None = None
         self.database: Database | None = None
         self.llm: LlmService | None = None
+        self.chat: ChatController | None = None
         self.notices: list[Notice] = []
         self.window: MainWindow | None = None
         
@@ -64,7 +66,8 @@ class Application(QApplication):
         
         self.llm = LlmService()
         self.setStyleSheet(stylesheet(self.settings.theme))
-        self.window = MainWindow(self.settings, self.hardware, self.database)
+        self.chat = ChatController(self.settings, self.hardware, self.database, self.llm)
+        self.window = MainWindow(self.settings, self.hardware, self.database, self.chat)
         elapsed_ms = int((time.monotonic() - started) * 1000)
         QTimer.singleShot(max(0, SPLASH_TIME - elapsed_ms), lambda: self._show_main(splash))
         return self.exec()
