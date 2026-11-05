@@ -50,4 +50,12 @@ MEMORY_MARGIN = 1.2
 META_ARCH = "general.architecture"
 META_CONTEXT_LENGTH = "context_length"
 META_BLOCK_COUNT = "block_count"
-
+META_NAME = "general.name"
+META_SIZE_LABEL = "general.size_label"
+META_FILE_TYPE = "general.file_type"
+META_CHAT_TEMPLATE = "tokenizer.chat_template"
+META_EMBEDDING_LENGTH = "embedding_length"
+META_HEAD_COUNT = "attention.head_count"
+META_HEAD_COUNT_KV = "attention.head_count_kv"
+META_KEY_LENGTH = "attention.key_length"
+META_VALUE_LENGTH = "attention.value_length"

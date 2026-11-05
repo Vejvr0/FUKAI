@@ -464,7 +464,7 @@ Pri prepisovaní vzniklo 9 chýb, z toho 4 tiché – zoznam v ALMANAC §8 krok 
 
 ### Hotové
 
-**Kúsok 5a – composer a výber modelu.** Poradie zmenené na želanie autora (composer + modely pred zoznamom správ). Claude navrhol a otestoval v scratchpade (`ui/composer.py`, `ui/settings_store.py`, `ui/model_library.py`, zmeny v controlleri, štýle, ikonách a zapojení). Autor prepísal väčšinu, Claude opravil 7 chýb (zoznam v ALMANAC), doplnil `style.py` a zapojenie (`chat_view`, `main_window`, `application`). Testy nad repom: UI offscreen 15/15, výber modelu 7/7, `test_controller.py` 8/8.
+**Kúsok 5a – composer a výber modelu.** Poradie zmenené na želanie autora (composer + modely pred zoznamom správ). Claude navrhol a otestoval v scratchpade (`ui/composer.py`, `ui/settings_store.py`, `ui/model_library.py`, zmeny v controlleri, štýle, ikonách a zapojení). Autor prepísal väčšinu, Claude opravil 7 chýb (zoznam v ALMANAC), doplnil `style.py` a zapojenie (`chat_view`, `main_window`, `application`). Testy nad repom: UI offscreen 14/14 (pôvodne hlásené 15/15 – test má 14 kontrol, prepočítané 2026-11-05), výber modelu 7/7, `test_controller.py` 8/8.
 
 Rozhodnutia autora pre 5c: kôš v riadku menu pod myšou, mazanie aj kópie súboru, import s trvalým toastom s priebehom; + a Web zobrazené, ale vypnuté.
 

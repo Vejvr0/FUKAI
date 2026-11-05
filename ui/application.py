@@ -69,7 +69,6 @@ class Application(QApplication):
         
         self.llm = LlmService()
         self.setStyleSheet(stylesheet(self.settings.current.theme))
-        self.library = ModelLibrary(self.settings, self.database)
         self.chat = ChatController(self.settings, self.hardware, self.database, self.llm)
         self.window = MainWindow(self.settings, self.hardware, self.database, self.chat, self.library)
         elapsed_ms = int((time.monotonic() - started) * 1000)
@@ -93,6 +92,10 @@ class Application(QApplication):
         self._step(splash, "Otváram databázu...")
         self.database = Database()
         self.database.connect()
+        
+        self._step(splash, "Kontrolujem modely...")
+        self.library = ModelLibrary(self.settings, self.database)
+        self.notices.extend(self.library.refresh_meta())
         
         self._step(splash, f"Pripravené · {self.hardware.backend.upper()}")
         

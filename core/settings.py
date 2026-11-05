@@ -161,7 +161,13 @@ class ModelMeta:
     arch: str | None = None
     n_ctx_train: int | None = None
     n_layers: int | None = None
-
+    name: str | None = None
+    quant: str | None = None
+    size_label: str | None = None
+    has_chat_template: bool | None = None
+    n_head_kv: int | None = None
+    head_dim_k: int | None = None
+    head_dim_v: int | None = None
 
     def to_dict(self) -> dict:
         return _as_dict(self)

@@ -134,6 +134,10 @@ class Database:
     def get_model(self, model_id: int) -> dict | None:
         rows = self.query("SELECT * FROM models WHERE id = ?", (model_id,))
         return _parse_json(rows[0], "meta") if rows else None
+    
+    
+    def set_model_meta(self, model_id: int, meta: dict) -> None:
+        self.execute("UPDATE models SET meta = ? WHERE id = ?", (json.dumps(meta), model_id))
 
     
     def delete_model(self, model_id: int) -> None:
