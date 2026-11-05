@@ -7,7 +7,7 @@ from PyQt6.QtGui import QIcon
 from core.app_settings import load_settings
 from core.constants import APP_NAME, APP_VERSION
 from core.hardware import HardwareProfile, check_cores, check_gpu, check_os, check_ram, detect
-from core.errors import FukaiError, Notice
+from core.errors import ConfigError, FukaiError, Notice
 from storage.database import Database
 from ui.chat_controller import ChatController
 from ui.model_library import ModelLibrary
@@ -95,10 +95,22 @@ class Application(QApplication):
         
         self._step(splash, "Kontrolujem modely...")
         self.library = ModelLibrary(self.settings, self.database)
+        if self.database.created:
+            self._forget_last_model()
+        self.notices.extend(self.library.scan_folder())
         self.notices.extend(self.library.refresh_meta())
         
         self._step(splash, f"Pripravené · {self.hardware.backend.upper()}")
-        
+    
+    
+    def _forget_last_model(self) -> None:
+        if self.settings.current.last_model_id is None:
+            return
+        try:
+            self.settings.update(last_model_id=None)
+        except ConfigError as exc:
+            self.notices.append(exc.as_notice())
+    
     
     def _step(self, splash: SplashScreen, text: str) -> None:
         splash.showMessage(text)
@@ -134,6 +146,8 @@ class Application(QApplication):
         if self.llm is not None:
             self.llm.shutdown()
             self.llm = None
+        if self.library is not None:
+            self.library.shutdown()             # zruší import a počká – pred zatvorením databázy
         if self.database is not None:
             self.database.close()
             self.database = None

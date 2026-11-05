@@ -24,7 +24,7 @@ class Toast(QFrame):
     closed = pyqtSignal(object)
     
     
-    def __init__(self, notice: Notice, parent: QWidget, *, persistent: bool = False) -> None:
+    def __init__(self, notice: Notice, parent: QWidget, *, persistent: bool = False, progress: bool = False) -> None:
         super().__init__(parent)
         self.setObjectName("toast")
         self.setProperty("severity", notice.severity.value)
@@ -48,8 +48,22 @@ class Toast(QFrame):
         layout.setSpacing(2)
         layout.addLayout(header)
         layout.addWidget(self._label(notice.message, "toastMessage"))
+        self._hint: QLabel | None = None
         if notice.hint:
-            layout.addWidget(self._label(notice.hint, "toastHint"))
+            self._hint = self._label(notice.hint, "toastHint")
+            layout.addWidget(self._hint)
+            
+        self._progress: QProgressBar | None = None
+        if progress:
+            persistent = True
+            self._progress = QProgressBar()
+            self._progress.setObjectName("toastProgress")
+            self._progress.setTextVisible(False)
+            self._progress.setFixedHeight(4)
+            self._progress.setRange(0, TOAST_TIMELINE_STEPS)
+            self._progress.setValue(0)
+            layout.addSpacing(6)
+            layout.addWidget(self._progress)
             
         self._timeline: QTimeLine | None = None
         duration = 0 if persistent else DURATIONS[notice.severity]     # 0 = bez časovej osi, zavrie ho volajúci
@@ -79,6 +93,13 @@ class Toast(QFrame):
         label.setWordWrap(True)
         label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         return label
+    
+    
+    def set_progress(self, fraction: float, text: str | None = None) -> None:
+        if self._progress is not None:
+            self._progress.setValue(round(max(0.0, min(1.0, fraction)) * TOAST_TIMELINE_STEPS))
+        if text is not None and self._hint is not None:
+            self._hint.setText(text)
     
     
     def start(self) -> None:
@@ -117,10 +138,8 @@ class ToastHost(QObject):
         window.installEventFilter(self)
     
     
-    def show_notice(self, notice: Notice, *, persistent: bool = False) -> Toast:
-        """`persistent=True` – toast sa sám nezavrie (napr. „Načítavam model…“); volajúci si ho
-        podrží a zavolá `dismiss()`. Opakovaný dismiss() je neškodný – aj keď ho medzitým zavrel ✕."""
-        toast = Toast(notice, self._window, persistent=persistent)
+    def show_notice(self, notice: Notice, *, persistent: bool = False, progress: bool = False) -> Toast:
+        toast = Toast(notice, self._window, persistent=persistent, progress=progress)
         toast.closed.connect(self._remove)
         self._toasts.append(toast)
         toast.show()

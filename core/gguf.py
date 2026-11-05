@@ -5,12 +5,13 @@ from typing import BinaryIO
 from core.constants import (
     META_ARCH, META_BLOCK_COUNT, META_CHAT_TEMPLATE, META_CONTEXT_LENGTH,
     META_FILE_TYPE, META_EMBEDDING_LENGTH, META_HEAD_COUNT, META_HEAD_COUNT_KV,
-    META_KEY_LENGTH, META_NAME, META_SIZE_LABEL, META_VALUE_LENGTH
+    META_KEY_LENGTH, META_NAME, META_SIZE_LABEL, META_VALUE_LENGTH, ARCH_PROJECTOR
 )
 from core.settings import ModelMeta
 from core.errors import ModelError, ModelFormatError, ModelNotFoundError
 
 __all__ = [
+    "check_usable",
     "read_header",
     "read_meta"
 ]
@@ -156,6 +157,26 @@ def read_meta(path: str | Path) -> ModelMeta:
         head_dim_k=head_dim_k,
         head_dim_v=arch_int(META_VALUE_LENGTH) or head_dim_k 
     )
+
+
+def check_usable(meta: ModelMeta) -> None:
+    if meta.arch == ARCH_PROJECTOR:
+        raise ModelFormatError(
+            f"general.architecture = {meta.arch}",
+            message="Súbor je vizuálny projektor (mmproj), nie jazykový model.",
+            hint="Vyber samotný model - súbor bez „mmproj“ v názve."
+        )
+    if meta.arch is None or meta.n_layers is None:
+        raise ModelFormatError(
+            f"general.architecture = {meta.arch}, block_count = {meta.n_layers}",
+            message="Súbor nie je jazykový model."
+        )
+    if not meta.has_chat_template:
+        raise ModelFormatError(
+            "chýba tokenizer.chat_template",
+            message="Model nemá v metadátach chat template.",
+            hint="FUKAI ho potrebuje na skladanie konverzácie. Stiahni verziu modelu s chat template (zvyčajne s „-it“ alebo „-instruct“ v názve)."
+        )
 
 
 def _int(value) -> int | None:

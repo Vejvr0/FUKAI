@@ -149,6 +149,8 @@ _QSS = Template("""
     QProgressBar#toastTimeline        { border: none; background: $chip; border-radius: 1px; }
     QProgressBar#toastTimeline::chunk { background: $accent; border-radius: 1px; }
     QFrame#toast[severity="warning"] QProgressBar#toastTimeline::chunk { background: $warning; }
+    QProgressBar#toastProgress        { border: none; background: $chip; border-radius: 2px; }
+    QProgressBar#toastProgress::chunk { background: $accent; border-radius: 2px; }
     QWidget#composerColumn { background: transparent; }
     QFrame#composer {
         background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 $glass_top, stop:1 $glass_bottom);

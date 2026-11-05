@@ -4,11 +4,12 @@ from PyQt6.QtWidgets import (
     QFrame, QGraphicsDropShadowEffect, QHBoxLayout, QVBoxLayout, QLabel, QMenu,
     QPlainTextEdit, QToolButton, QWidget, QWidgetAction
 )
-from PyQt6.QtCore import QEvent, QObject, QPoint, QSize, Qt, pyqtSignal
+from PyQt6.QtCore import QEvent, QObject, QPoint, QSize, Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QIcon, QKeyEvent, QPalette, QTextOption
 from ui.constants import (
     COMPOSER_BUTTON, COMPOSER_INPUT_MAX_HEIGHT, MODEL_MENU_WIDTH, MODEL_PILL_TEXT_WIDTH, NO_MODEL
 )
+from ui.formatting import size_text
 from ui.icons import icon
 from ui.style import THEMES, qcolor
 
@@ -18,17 +19,11 @@ __all__ = [
 ]
 
 
-def _size_text(size_mb: float) -> str:
-    if size_mb >= 1024:
-        return f"{size_mb / 1024:.1f} GB".replace(".", ",")
-    return f"{size_mb:.0f} MB"
-
-
 def model_subtitle(model: dict) -> str:
     if model.get("size_mb") is None:
         return "súbor chýba"
     meta = model.get("meta") or {}
-    parts = [meta.get("quant"), meta.get("size_label"), _size_text(model["size_mb"])]
+    parts = [meta.get("quant"), meta.get("size_label"), size_text(model["size_mb"])]
     return " · ".join(p for p in parts if p)
 
 
@@ -359,9 +354,8 @@ class Composer(QFrame):
 
         menu.addSeparator()
         add = menu.addAction(icon("plus", THEMES[self._theme]["text"]), "Pridať .gguf model…")
-        add.triggered.connect(self.add_model_requested)
-        add.setEnabled(False)
-        add.setToolTip("Import modelu – pripravuje sa")
+        # až po zatvorení menu – dialóg otvorený vnútri menu.exec() by bežal vo vnorenej slučke menu
+        add.triggered.connect(lambda: QTimer.singleShot(0, self.add_model_requested.emit))
 
         size = menu.sizeHint()
         pos = self._pill.mapToGlobal(QPoint(self._pill.width() - size.width(), -size.height() - 8))

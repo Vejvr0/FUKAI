@@ -483,3 +483,32 @@ Rozhodnutia autora pre 5c: kôš v riadku menu pod myšou, mazanie aj kópie sú
 1. Test autora v živom okne (cocoa) – hlavne zaoblené menu modelov a tieň composera; potom commit.
 2. Kúsok 5b – `core/gguf.py` (čítač hlavičky), potom 5c – import a mazanie modelu.
 3. Zoznam správ, kúsok 3b (menu ⋯), overenie na PC 1.
+
+## 2026-11-05 – MacBook: čítač `.gguf`, sken a import modelov (krok 9, kúsky 5b, 5c-1, 5c-2)
+
+**Stav na začiatku:** kúsok 5a hotový v repe, necommitnutý (commit `5353816` počas session).
+
+### Hotové
+
+**Kúsok 5b – `core/gguf.py`** (`44fc7e6`). Vlastný čítač hlavičky bez knižnice `gguf`, `ModelMeta` rozšírená (názov, kvantizácia, KV polia), doplnenie metadát starých riadkov pri štarte. Autor prepísal, Claude opravil 5 chýb – najvážnejšia `Database.set_model` s rovnakým menom ako výmena modelu v chate (Python nechá neskoršiu, štart by spadol).
+
+**Kúsok 5c-1 – sken `models/` pri štarte.** Podnet: autor zmazal `fukai.db` a modely sa v novej databáze neobjavili. Poradie štartu: databáza → sken → metadáta; nová databáza vynuluje `last_model_id`. `check_usable()` odmietne mmproj, nejazykové modely a modely bez chat template. Autor prepísal bez chýb a zmazal `tools/dev_add_model.py`.
+
+**Kúsok 5c-2 – import modelu.** Kópia vo vlastnom vlákne do `*.gguf.part`, toast s pruhom priebehu, ✕ ruší, duplikát podľa názvu + veľkosti, `-2` pri kolízii mena, oprava riadku bez súboru, výber modelu po importe. Autor prepísal všetko okrem `main_window.py`; Claude opravil 3 chyby a dokončil `main_window.py`. Testy nad repom: import 22/22, akcia v menu → dialóg → import 3/3, sken 11/11, okno 14/14, výber modelu 7/7, controller, metadáta, gguf.
+
+### Zistenia, ktoré stoja za zápis
+
+| Zistenie | Prečo bolo zradné |
+|---|---|
+| dve metódy s rovnakým menom v triede | Python ticho nechá neskoršiu – pád len pri databáze s prázdnou `meta` |
+| `add.trigger` namiesto `add.triggered`, `emit()` so zátvorkami | spadne už otvorenie menu modelov; test okna kontroloval len `isEnabled()` – test musí akciu spustiť |
+| zrušenie importu signálom | worker by ho dostal až po konci kópie – `threading.Event` priamo z UI vlákna |
+| `.part` zmazaný vnútri `with` | na Macu prejde, Windows otvorený súbor zmazať nedovolí |
+| KV cache vzorec | sedí s logom llama.cpp na Qwene aj Gemme (SWA pri full-size cache) |
+| `git commit -m "05.11.2026 - "gguf.py"` | úvodzovka navyše → zsh čaká na `dquote>`; Ctrl+C a jedny úvodzovky |
+
+### Nedoriešené do ďalšej session
+
+1. **Commit** 5c-1 + 5c-2 + ALMANAC + SESSIONS (autor). Import cez dialóg aj zrušenie krížikom autor overil v živom okne na M2 – bez zvyškov v priečinku; zatvorenie appky počas importu živo neoverené.
+2. **Kúsok 5c-3 – mazanie modelu** (plán v ALMANAC §8 krok 9) – dohodnuté na 2026-11-06.
+3. Zoznam správ, kúsok 3b (menu ⋯ vrátane mazania chatu počas odpovede), KV odhad pre stránku Vlastnosti, overenie na PC 1.

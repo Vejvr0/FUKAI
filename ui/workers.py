@@ -1,15 +1,22 @@
 from __future__ import annotations
+import os
+import threading
 import time
 from dataclasses import dataclass, field
+from pathlib import Path
 from PyQt6.QtCore import QObject, pyqtSignal, pyqtSlot
+from core.constants import IMPORT_CHUNK_BYTES
+from core.gguf import check_usable, read_meta
 from core.context import HistoryItem, build_prompt
 from core.llm_engine import FinishReason, LlmEngine
 from core.settings import LoadParams, SamplingParams
-from core.errors import FukaiError, GenerationError, ModelLoadError
+from core.errors import FukaiError, GenerationError, ModelImportError, ModelLoadError
 
 __all__ = [
     "GenerateRequest",
     "GenerationResult",
+    "ImportRequest",
+    "ImportWorker",
     "LlmWorker"
 ]
 
@@ -133,4 +140,64 @@ class LlmWorker(QObject):
             total_s=time.monotonic() - started,
             **done
         )
-        
+
+
+@dataclass(frozen=True)
+class ImportRequest:
+    source: Path
+    dest: Path
+    cancel: threading.Event
+
+
+class ImportWorker(QObject):
+    progress = pyqtSignal(int, int)
+    finished = pyqtSignal(object, object)
+    failed = pyqtSignal(object)
+    cancelled = pyqtSignal()
+    
+    
+    @pyqtSlot(object)
+    def run(self, request: ImportRequest) -> None:
+        try:
+            meta = read_meta(request.source)
+            check_usable(meta)
+            done = self._copy(request)
+        except FukaiError as exc:
+            self.failed.emit(exc)
+        except Exception as exc:
+            self.failed.emit(ModelImportError(f"{type(exc).__name__}: {exc}"))
+        else:
+            if done:
+                self.finished.emit(request.dest, meta)
+            else:
+                self.cancelled.emit()
+    
+    
+    def _copy(self, request: ImportRequest) -> bool:
+        part = request.dest.with_name(request.dest.name + ".part")
+        total = request.source.stat().st_size
+        cancelled = False
+        try:
+            with request.source.open("rb") as src, part.open("wb") as dst:
+                copied = 0
+                while chunk := src.read(IMPORT_CHUNK_BYTES):
+                    if request.cancel.is_set():
+                        cancelled = True
+                        break
+                    dst.write(chunk)
+                    copied += len(chunk)
+                    self.progress.emit(copied, total)
+                else:
+                    dst.flush()
+                    os.fsync(dst.fileno())
+            if cancelled or request.cancel.is_set():
+                part.unlink(missing_ok=True)
+                return False
+            os.replace(part, request.dest)
+        except OSError as exc:
+            part.unlink(missing_ok=True)
+            raise ModelImportError(
+                f"{type(exc).__name__}: {exc}",
+                message="Kopírovanie modelu do knižnice zlyhalo."
+            ) from exc
+        return True

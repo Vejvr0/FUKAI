@@ -12,6 +12,7 @@ __all__ = [
     "ModelError",
     "ModelNotFoundError",
     "ModelFormatError",
+    "ModelImportError",
     "BackendUnavailableError",
     "ModelLoadError",
     "InsufficientMemoryError",
@@ -121,6 +122,11 @@ class ModelNotFoundError(ModelError):
 class ModelFormatError(ModelError):
     default_message = "Vložený model nemá podporovaný formát."
     default_hint = "FUKAI podporuje iba modely s príponou .gguf."
+
+
+class ModelImportError(ModelError):
+    default_message = "Model sa nepodarilo importovať."
+    default_hint = "Skontroluj voľné miesto na disku a prístup k priečinku modelov."
 
 
 class BackendUnavailableError(ModelError):

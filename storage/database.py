@@ -27,6 +27,7 @@ class Database:
         self.path = Path(path) if path is not None else db_path()
         self._conn: sqlite3.Connection | None = None
         self._lock = threading.Lock()
+        self.created = False
 
 
     # --- DB connection handling ---
@@ -103,6 +104,7 @@ class Database:
                 conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
         except sqlite3.Error as exc:
             raise StorageError(f"{type(exc).__name__}: {exc}") from exc
+        self.created = version == 0
 
 
     # --- Read and Write ---

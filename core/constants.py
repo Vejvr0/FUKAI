@@ -59,3 +59,6 @@ META_HEAD_COUNT = "attention.head_count"
 META_HEAD_COUNT_KV = "attention.head_count_kv"
 META_KEY_LENGTH = "attention.key_length"
 META_VALUE_LENGTH = "attention.value_length"
+ARCH_PROJECTOR = "clip"
+IMPORT_CHUNK_BYTES = 8 * 1024 * 1024
+IMPORT_FREE_MARGIN_MB = 1024
