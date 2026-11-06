@@ -197,6 +197,8 @@ _QSS = Template("""
     QFrame#modelRow:hover { background: $chip; }
     QLabel#modelName { font-weight: 600; }
     QLabel#modelSub  { color: $text_muted; font-size: 12px; }
+    QToolButton#modelTrash { border: none; border-radius: 7px; background: transparent; }
+    QToolButton#modelTrash:hover { background: $chip_hover; }
     QLabel#modelEmpty { color: $text_muted; padding: 8px 10px; }
 """)
 

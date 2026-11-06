@@ -1,7 +1,7 @@
 from __future__ import annotations
 from pathlib import Path
 from PyQt6.QtWidgets import (
-    QFileDialog, QMainWindow, QFrame, QLabel, QHBoxLayout, QVBoxLayout, QStackedWidget, QWidget
+    QFileDialog, QMessageBox, QMainWindow, QFrame, QLabel, QHBoxLayout, QVBoxLayout, QStackedWidget, QWidget
 )
 from PyQt6.QtCore import Qt
 from core.constants import APP_NAME
@@ -87,6 +87,7 @@ class MainWindow(QMainWindow):
         controller.loading_finished.connect(lambda: composer.set_loading(False))
         
         composer.add_model_requested.connect(self._on_add_model)
+        composer.delete_model_requested.connect(self._on_delete_model)
         library.import_progress.connect(self._on_import_progress)
         library.import_finished.connect(self._on_import_finished)
         library.import_failed.connect(self._on_import_failed)
@@ -95,7 +96,7 @@ class MainWindow(QMainWindow):
         self._toast = ToastHost(self)
         self.apply_theme(settings.current.theme)
         self.reload_chats()
-        controller.new_chat()                   # štart = prázdny chat s posledným modelom
+        controller.new_chat()
         
 
     @staticmethod
@@ -129,8 +130,8 @@ class MainWindow(QMainWindow):
     def _on_chat_opened(self, chat_id: int | None, title: str, messages: list[dict]) -> None:
         self._sidebar.select_chat(chat_id)
         self._chat.set_title(title)
-        self._chat.composer.end_turn()          # bežiaci ťah tohto chatu controller hneď ohlási znova
-        self._show_page(PAGE_CHAT)              # správy vykreslí ChatView v ďalšom kúsku
+        self._chat.composer.end_turn()
+        self._show_page(PAGE_CHAT)
         self._chat.composer.focus_input()
 
 
@@ -138,27 +139,25 @@ class MainWindow(QMainWindow):
         self.reload_chats()
         self._sidebar.select_chat(selected)
         if selected is not None and selected == self._controller.chat_id:
-            self._chat.set_title(self._chats[selected]["title"])     # nový chat dostal názov
-
+            self._chat.set_title(self._chats[selected]["title"])
 
     def _on_loading_started(self, model_title: str) -> None:
-        notice = Notice.info("Načítavam model…", hint=f"{model_title} – prvé načítanie môže trvať aj desiatky sekúnd.")
+        notice = Notice.info("Načítavam model…", hint=f"{model_title} - prvé načítanie môže trvať aj desiatky sekúnd.")
         self._loading_toast = self.show_notice(notice, persistent=True)
 
 
     def _on_loading_finished(self) -> None:
         if self._loading_toast is not None:
-            self._loading_toast.dismiss()       # neškodné, aj keď ho používateľ zavrel ✕
+            self._loading_toast.dismiss()
             self._loading_toast = None
     
     
-    
-    # --- import modelu ---------------------------------------------------------------------
-    
     def _on_add_model(self) -> None:
         if self._library.importing:
-            self.show_notice(Notice.info("Import modelu už prebieha.",
-                                         hint="Počkaj, kým sa dokončí, alebo ho zruš krížikom v jeho hlásení."))
+            self.show_notice(Notice.info(
+                "Import modelu už prebieha.",
+                hint="Počkaj, kým sa dokončí, alebo ho zruš krížikom v jeho hlásení."
+            ))
             return
         path, _ = QFileDialog.getOpenFileName(self, "Pridať model", str(Path.home()), "Modely GGUF (*.gguf)")
         if path:
@@ -166,7 +165,6 @@ class MainWindow(QMainWindow):
     
     
     def import_model(self, source: Path) -> None:
-        """Bez dialógu – volá ho `_on_add_model` a testy."""
         try:
             existing = self._library.start_import(source)
         except FukaiError as exc:
@@ -182,8 +180,6 @@ class MainWindow(QMainWindow):
     
     
     def _on_import_toast_closed(self, _toast: Toast) -> None:
-        # ✕ = zrušiť import. Po dokončení toast zatvára _close_import_toast – vtedy už nič nebeží
-        # a cancel_import() nič nespraví.
         self._import_toast = None
         self._library.cancel_import()
     
@@ -191,8 +187,7 @@ class MainWindow(QMainWindow):
     def _on_import_progress(self, copied: int, total: int) -> None:
         if self._import_toast is not None:
             mb = 1024 * 1024
-            self._import_toast.set_progress(copied / total if total else 1.0,
-                                            f"{size_text(copied / mb)} z {size_text(total / mb)}")
+            self._import_toast.set_progress(copied / total if total else 1.0, f"{size_text(copied / mb)} z {size_text(total / mb)}")
     
     
     def _close_import_toast(self) -> None:
@@ -218,7 +213,40 @@ class MainWindow(QMainWindow):
     
     
     def _select_imported(self, model_id: int) -> None:
-        """Importovaný model sa rovno vyberie (rozhodnutie autora) – okrem chvíle, keď beží
-        odpoveď: model sa vtedy meniť nedá (§7.2 bod 6), v menu už je."""
         if not self._controller.busy:
             self._controller.select_model(model_id)
+    
+    
+    def _on_delete_model(self, model_id: int) -> None:
+        model = next((m for m in self._library.models() if m["id"] == model_id), None)
+        if model is None or not self._confirm_delete(model):
+            return
+        if self._controller.busy:
+            self.show_notice(Notice.info("Počas odpovede sa model zmazať nedá."))
+            return
+        try:
+            self._controller.release_model(model_id)
+            self._library.delete_model(model_id)
+        except FukaiError as exc:
+            self.show_notice(exc.as_notice())
+            return
+        self._controller.model_deleted(model_id)
+        self.show_notice(Notice.info("Model je zmazaný.", hint=model["title"]))
+    
+    
+    def _confirm_delete(self, model: dict) -> bool:
+        path = self._library.model_path(model)
+        if path.is_symlink():
+            text = f"Model „{model['title']}“ sa odstráni z knižnice. Zmaže sa len odkaz, pôvodný súbor zostane."
+        elif model["size_mb"] is None:
+            text = f"Model „{model['title']}“ sa odstráni zo zoznamu. Jeho súbor už na disku nie je."
+        else:
+            text = f"Model „{model['title']}“ sa odstráni z knižnice a jeho súbor sa zmaže z disku."
+            
+        box = QMessageBox(QMessageBox.Icon.Question, "Zmazať model", text, parent=self)
+        box.setInformativeText("Chaty s týmto modelom zostanú - pred ďalšou správou v nich vyberieš iný model.")
+        delete = box.addButton("Zmazať", QMessageBox.ButtonRole.DestructiveRole)
+        cancel = box.addButton("Zrušiť", QMessageBox.ButtonRole.RejectRole)
+        box.setDefaultButton(cancel)
+        box.exec()
+        return box.clickedButton() is delete

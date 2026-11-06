@@ -49,6 +49,26 @@ class ModelLibrary(QObject):
         return rows
     
     
+    def model_path(self, model: dict) -> Path:
+        return self._settings.current.models_dir / model["path"]
+    
+    
+    def delete_model(self, model_id: int) -> None:
+        model = self._database.get_model(model_id)
+        if model is None:
+            return
+        path = self.model_path(model)
+        try:
+            path.unlink(missing_ok=True)
+        except OSError as exc:
+            raise ModelError(
+                f"{type(exc).__name__}: {exc}",
+                message="Súbor modelu sa nepodarilo zmazať.",
+                hint=f"{path} - možno ho používa iný program. Zatvor ho a skús to znova."
+            ) from exc
+        self._database.delete_model(model_id)
+    
+    
     def scan_folder(self) -> list[Notice]:
         models_dir = self._settings.current.models_dir
         try:

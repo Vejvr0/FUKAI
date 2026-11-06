@@ -12,7 +12,6 @@ __all__ = ["LlmService"]
 
 class LlmService(QObject):
     _load_requested = pyqtSignal(object)
-    _unload_requested = pyqtSignal()
     _generate_requested = pyqtSignal(object)
     
     loaded = pyqtSignal(object)
@@ -36,7 +35,6 @@ class LlmService(QObject):
         self._worker.moveToThread(self._thread)
         
         self._load_requested.connect(self._worker.load)
-        self._unload_requested.connect(self._worker.unload)
         self._generate_requested.connect(self._worker.generate)
         self._worker.loaded.connect(self._on_loaded)
         self._worker.load_failed.connect(self._on_load_failed)
@@ -81,7 +79,7 @@ class LlmService(QObject):
     
     def unload(self) -> None:
         self._require_idle()
-        self._unload_requested.emit()
+        self._engine.unload()
     
     
     def generate(self, history: list[HistoryItem], question: str, *, sampling: SamplingParams, system_prompt: str = "") -> int:

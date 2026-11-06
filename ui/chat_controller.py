@@ -127,6 +127,26 @@ class ChatController(QObject):
         except FukaiError as exc:
             self.notice.emit(exc.as_notice())
         self._emit_model()
+    
+    
+    def release_model(self, model_id: int) -> None:
+        if self.busy:
+            raise RuntimeError("model sa počas generovania mazať nedá")
+        model = self._database.get_model(model_id)
+        if model is not None and self._loaded is not None and self._loaded.model_path == self._model_path(model):
+            self._llm.unload()
+            self._loaded = None
+    
+    
+    def model_deleted(self, model_id: int) -> None:
+        if self._settings.current.last_model_id == model_id:
+            try:
+                self._settings.update(last_model_id=None)
+            except FukaiError as exc:
+                self.notice.emit(exc.as_notice())
+        if self._model_id == model_id:
+            self._model_id = None
+            self._emit_model()
             
     
     def send(self, text: str) -> None:

@@ -1,7 +1,7 @@
 from __future__ import annotations
 from typing import Callable
 from PyQt6.QtWidgets import (
-    QFrame, QGraphicsDropShadowEffect, QHBoxLayout, QVBoxLayout, QLabel, QMenu,
+    QApplication, QFrame, QGraphicsDropShadowEffect, QHBoxLayout, QVBoxLayout, QLabel, QMenu,
     QPlainTextEdit, QToolButton, QWidget, QWidgetAction
 )
 from PyQt6.QtCore import QEvent, QObject, QPoint, QSize, Qt, QTimer, pyqtSignal
@@ -71,12 +71,13 @@ class _Input(QPlainTextEdit):
 
 class _ModelRow(QFrame):
     clicked = pyqtSignal()
+    delete_clicked = pyqtSignal()
     
     
-    def __init__(self, model: dict, selected: bool, check_icon: QIcon, parent: QWidget | None = None) -> None:
+    def __init__(self, model: dict, selected: bool, check_icon: QIcon, trash_icon: QIcon, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setObjectName("modelRow")
-        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._hand = False
         self.setToolTip(model["path"])
         
         name = QLabel(model["title"])
@@ -93,13 +94,55 @@ class _ModelRow(QFrame):
         check.setFixedSize(16, 16)
         if selected:
             check.setPixmap(check_icon.pixmap(QSize(16, 16)))
+            
+        self._trash = QToolButton()
+        self._trash.setObjectName("modelTrash")
+        self._trash.setFixedSize(24, 24)
+        self._trash.setIcon(trash_icon)
+        self._trash.setToolTip("Zmazať model")
+        self._trash.clicked.connect(lambda: self.delete_clicked.emit())
+        policy = self._trash.sizePolicy()
+        policy.setRetainSizeWhenHidden(True)
+        self._trash.setSizePolicy(policy)
+        self._trash.hide()
         
         row = QHBoxLayout(self)
-        row.setContentsMargins(10, 7, 10, 7)
-        row.setSpacing(10)
+        row.setContentsMargins(10, 7, 6, 7)
+        row.setSpacing(6)
         row.addLayout(text, 1)
+        row.addWidget(self._trash)
         row.addWidget(check)
-        
+    
+    
+    def enterEvent(self, event) -> None:
+        self._trash.show()
+        self._set_hand(True)
+        super().enterEvent(event)
+    
+    
+    def leaveEvent(self, event) -> None:
+        self._trash.hide()
+        self._set_hand(False)
+        super().leaveEvent(event)
+    
+    
+    def hideEvent(self, event) -> None:
+        self._set_hand(False)                   # menu sa zavrelo pod myšou – leave nemusí prísť
+        super().hideEvent(event)
+    
+    
+    def _set_hand(self, on: bool) -> None:
+        """Ruka cez override kurzor, nie `setCursor`. Menu je na macOS popup, ktorý nie je
+        kľúčové okno, a cocoa v ňom zmenu kurzora pri pohybe myši neuplatní (overené:
+        `setCursor` v QMenu → šípka, override → ruka). Override je zásobník – preto príznak,
+        aby sa každé nastavenie vrátilo práve raz."""
+        if on != self._hand:
+            self._hand = on
+            if on:
+                QApplication.setOverrideCursor(Qt.CursorShape.PointingHandCursor)
+            else:
+                QApplication.restoreOverrideCursor()
+    
     
     def mouseReleaseEvent(self, event) -> None:
         if event.button() == Qt.MouseButton.LeftButton and self.rect().contains(event.position().toPoint()):
@@ -168,6 +211,7 @@ class Composer(QFrame):
     stop_requested = pyqtSignal()
     model_selected = pyqtSignal(int)
     add_model_requested = pyqtSignal()
+    delete_model_requested = pyqtSignal(int)
     
     
     def __init__(self, parent: QWidget | None = None) -> None:
@@ -246,6 +290,7 @@ class Composer(QFrame):
         self._icon_send = icon("up", tokens["send_text"], disabled_color=text)
         self._icon_stop = icon("stop", tokens["send_text"], disabled_color=text)
         self._check = icon("check", tokens["accent_strong"], 16)
+        self._trash = icon("trash", tokens["danger"], 16)
         self._shadow.setColor(qcolor(tokens["shadow"]))
         palette = self._input.palette()
         palette.setColor(QPalette.ColorRole.PlaceholderText, qcolor(tokens["text_muted"]))
@@ -348,13 +393,13 @@ class Composer(QFrame):
             empty.setObjectName("modelEmpty")
             self._add_widget(menu, empty)
         for model in models:
-            row = _ModelRow(model, model["id"] == self._model_id, self._check)
+            row = _ModelRow(model, model["id"] == self._model_id, self._check, self._trash)
             row.clicked.connect(lambda model_id=model["id"]: self._choose(menu, model_id))
+            row.delete_clicked.connect(lambda model_id=model["id"]: self._delete(menu, model_id))
             self._add_widget(menu, row)
 
         menu.addSeparator()
         add = menu.addAction(icon("plus", THEMES[self._theme]["text"]), "Pridať .gguf model…")
-        # až po zatvorení menu – dialóg otvorený vnútri menu.exec() by bežal vo vnorenej slučke menu
         add.triggered.connect(lambda: QTimer.singleShot(0, self.add_model_requested.emit))
 
         size = menu.sizeHint()
@@ -368,6 +413,11 @@ class Composer(QFrame):
         action = QWidgetAction(menu)
         action.setDefaultWidget(widget)
         menu.addAction(action)
+    
+    
+    def _delete(self, menu: QMenu, model_id: int) -> None:
+        menu.close()
+        QTimer.singleShot(0, lambda: self.delete_model_requested.emit(model_id))
     
     
     def _choose(self, menu: QMenu, model_id: int) -> None:

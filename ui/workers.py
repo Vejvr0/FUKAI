@@ -80,11 +80,6 @@ class LlmWorker(QObject):
             self.loaded.emit(notices)
     
     
-    @pyqtSlot()
-    def unload(self) -> None:
-        self._engine.unload()
-    
-    
     @pyqtSlot(object)
     def generate(self, request: GenerateRequest) -> None:
         try:

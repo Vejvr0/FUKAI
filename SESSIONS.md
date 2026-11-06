@@ -512,3 +512,29 @@ Rozhodnutia autora pre 5c: kôš v riadku menu pod myšou, mazanie aj kópie sú
 1. **Commit** 5c-1 + 5c-2 + ALMANAC + SESSIONS (autor). Import cez dialóg aj zrušenie krížikom autor overil v živom okne na M2 – bez zvyškov v priečinku; zatvorenie appky počas importu živo neoverené.
 2. **Kúsok 5c-3 – mazanie modelu** (plán v ALMANAC §8 krok 9) – dohodnuté na 2026-11-06.
 3. Zoznam správ, kúsok 3b (menu ⋯ vrátane mazania chatu počas odpovede), KV odhad pre stránku Vlastnosti, overenie na PC 1.
+
+## 2026-11-06 – MacBook: mazanie modelu (krok 9, kúsok 5c-3)
+
+**Stav na začiatku:** 5c-1 a 5c-2 commitnuté (`899334c`).
+
+### Hotové
+
+**Kúsok 5c-3 – mazanie modelu.** Kôš v riadku menu modelov pod myšou, potvrdenie `QMessageBox`, poradie pamäť → súbor → riadok, chaty zostanú bez modelu, „Vyber model“ po zmazaní vybraného. `LlmService.unload()` je teraz synchrónne (mazanie musí vedieť, že model je z pamäte preč, skôr než siahne na súbor – Windows a mmap). Claude navrhol a otestoval v scratchpade, autor prepísal bez chýb a overil v živom okne. Testy nad repom: mazanie 23/23, kurzor 4/4, regresia celá.
+
+**Kurzor nad košom** (hlásil autor): v menu zostávala šípka. Príčina overená meraním skutočného kurzora macOS cez Objective-C runtime – `setCursor` v popupe (`QMenu`) cocoa neuplatní, override kurzor áno. Opravené cez `QApplication.setOverrideCursor` v `_ModelRow` s návratom aj pri zavretí menu.
+
+### Zistenia, ktoré stoja za zápis
+
+| Zistenie | Prečo bolo zradné |
+|---|---|
+| `setCursor` vo widgete v `QMenu` na macOS | nefunguje ani pre riadok, len to nebolo vidieť – myš do menu vchádza zospodu cez „Pridať“; offscreen test kurzor neoverí |
+| `[NSCursor currentCursor]` cez `ctypes` + `libobjc` | skutočný kurzor sa dá zmerať bez pyobjc aj bez snímky obrazovky |
+| override kurzor je zásobník | bez príznaku a `hideEvent` by po zavretí menu pod myšou zostala ruka v celej appke |
+| na macOS sa dá zmazať aj súbor namapovaný cez mmap | test poradie „najprv uvoľniť“ len kontroluje, dokáže ho až Windows |
+
+### Nedoriešené do ďalšej session
+
+1. **Commit** 5c-3 + oprava kurzora + ALMANAC + SESSIONS (autor).
+2. **Zoznam správ** (ALMANAC §8 krok 9 „Ďalej v kroku 9“) – chatovať sa už dá, ale odpovede v okne ešte nevidno.
+3. Kúsok 3b (menu ⋯ pri chate vrátane mazania chatu počas odpovede), KV odhad pre stránku Vlastnosti, overenie na PC 1 (import, mazanie s mmap, kurzor v menu na Windows).
+
