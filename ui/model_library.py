@@ -23,7 +23,7 @@ _MB = 1024 * 1024
 class ModelLibrary(QObject):
     _import_requested = pyqtSignal(object)
     
-    import_progress = pyqtSignal(int, int)
+    import_progress = pyqtSignal("qint64", "qint64")
     import_finished = pyqtSignal(int, str)
     import_failed = pyqtSignal(object)
     import_cancelled = pyqtSignal()

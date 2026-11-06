@@ -557,9 +557,15 @@ Rozhodnutia autora pre 5c: kôš v riadku menu pod myšou, mazanie aj kópie sú
 | umelá udalosť kolieska sa rodičom nepropaguje | test kolieska musí overovať text a zoznam zvlášť |
 | pri prepise zmizol susedný `connect` | composer by nevyprázdnil pole ani neukázal Stop – žiadna chyba, len nefunkčné tlačidlo |
 
+### Test na notebooku (Windows)
+
+Druhý Windows stroj: i7-11850H, 64 GB, Intel UHD + **NVIDIA T1200 Laptop 4 GB** (Turing) – detekcia GPU našla kartu aj bez llama-cpp-python. Bez knižnice appka beží a odoslanie ukáže toast „Engine … nie je dostupný“. S oficiálnym CPU wheelom 0.3.36 Gemma 3 4B 13–14 tok/s, CPU v špičke 60–75 %. Zistené: **záporné čísla v priebehu importu pri súbore nad 2 GiB** – `pyqtSignal(int, int)` je 32-bitový (overené, oprava `"qint64"`), a falošné varovanie o VRAM pri CPU wheeli na stroji s NVIDIA kartou. Oboje v ALMANAC §8 krok 9 „Poznatky z testu na notebooku“.
+
 ### Nedoriešené do ďalšej session
 
-1. **Commit** 6a + ALMANAC + SESSIONS (autor); `.gitattributes` má zmazané komentáre – skontrolovať, či zámerne.
-2. **6b – markdown + `pygments`** – rozhodnúť, či markdown už počas streamovania, alebo až po dobehnutí.
-3. Kúsok 3b (menu ⋯ pri chate), KV odhad pre stránku Vlastnosti, overenie na PC 1 (vrátane odozvy UI pred prvým tokenom).
+1. **Commit** poznatkov z notebooku (ALMANAC + SESSIONS; 6a je commitnuté v `dd06193`, aj so zmazanými komentármi v `.gitattributes`).
+2. **Prepis „Engine pri štarte + 64-bit priebeh importu“** (scratchpad `run12`, 7 súborov, ALMANAC §8 krok 9) – autor prepisuje, Claude skontroluje. Rozhodnutie autora: bez llama-cpp-python appka končí fatálnou chybou, engine sa zisťuje pri štarte spolu s hardvérom a určuje skutočný backend. Cestou zistené: knižnica hlási chýbajúcu DLL ako `RuntimeError`, nie `OSError`.
+   Test composera (`t6/composer_flow.py`) dnes visel aj nad nezmeneným HEAD (Gemma pri ~1,6 GB voľnej RAM) – nesúvisí so zmenou, preveriť pri ďalšom behu.
+3. **6b – markdown + `pygments`** – rozhodnúť, či markdown už počas streamovania, alebo až po dobehnutí.
+4. Kúsok 3b (menu ⋯ pri chate), KV odhad pre stránku Vlastnosti, overenie na PC 1 (vrátane odozvy UI pred prvým tokenom); CUDA wheel na T1200 (sm_75) – Toolkit nechýba len tu: požiadavka autora je, aby ho používateľ nemusel inštalovať zvlášť (§10).
 

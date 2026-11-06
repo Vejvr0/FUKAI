@@ -145,7 +145,7 @@ class ImportRequest:
 
 
 class ImportWorker(QObject):
-    progress = pyqtSignal(int, int)
+    progress = pyqtSignal("qint64", "qint64")
     finished = pyqtSignal(object, object)
     failed = pyqtSignal(object)
     cancelled = pyqtSignal()
