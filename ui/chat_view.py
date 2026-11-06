@@ -1,9 +1,17 @@
 from __future__ import annotations
-from PyQt6.QtCore import Qt
-from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QSizePolicy, QVBoxLayout, QWidget
+from PyQt6.QtCore import Qt, QSize
+from PyQt6.QtGui import QIcon
+from PyQt6.QtWidgets import (
+    QFrame, QGraphicsDropShadowEffect, QHBoxLayout, QLabel, QSizePolicy, QSpacerItem, QVBoxLayout, QWidget
+)
 from core.hardware import HardwareProfile
+from ui.constants import (
+    COMPOSER_MAX_WIDTH, COMPOSER_SHADOW_ROOM, EMPTY_LIFT, HEADER_HEIGHT, ICO, NEW_CHAT_TITLE,
+    WELCOME_LOGO, WELCOME_TEXT
+)
 from ui.composer import Composer
-from ui.constants import COMPOSER_MAX_WIDTH, COMPOSER_SHADOW_ROOM, HEADER_HEIGHT, NEW_CHAT_TITLE
+from ui.message_list import MessageList
+from ui.style import THEMES, qcolor
 
 __all__ = ["ChatView"]
 
@@ -35,37 +43,105 @@ class ChatView(QWidget):
         row.addWidget(self._title, 1)
         row.addWidget(self._hw_chip(hardware))
         
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(0)
-        layout.addWidget(header)
-        layout.addStretch(1)                    # zoznam správ – ďalší kúsok
-        layout.addWidget(self._composer_column())
-    
+        self.messages = MessageList()
+        self._welcome = self._welcome_block()
+        self._top = QSpacerItem(0, 0)
+        self._bottom = QSpacerItem(0, 0)
+        
+        self._layout = QVBoxLayout(self)
+        self._layout.setContentsMargins(0, 0, 0, 0)
+        self._layout.setSpacing(0)
+        self._layout.addWidget(header)
+        self._layout.addItem(self._top)
+        self._layout.addWidget(self._welcome)
+        self._layout.addWidget(self.messages, 1)
+        self._layout.addWidget(self._composer_column())
+        self._layout.addItem(self._bottom)
+        self._empty: bool | None = None
+        self._set_empty(True)
+
     
     def _composer_column(self) -> QWidget:
         self.composer = Composer()
-        foot = QLabel("FUKAI môže robiť chyby. Dôležité informácie si over.")
-        foot.setObjectName("composerFoot")
-        foot.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._foot = QLabel("FUKAI môže robiť chyby. Dôležité informácie si over.")
+        self._foot.setObjectName("composerFoot")
+        self._foot.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        policy = self._foot.sizePolicy()
+        policy.setRetainSizeWhenHidden(True)
+        self._foot.setSizePolicy(policy)
         
         column = QWidget()
         column.setObjectName("composerColumn")
-        # Tieň composera sa kreslí len v hraniciach rodiča – bez okraja by bol po bokoch odseknutý.
         column.setMaximumWidth(COMPOSER_MAX_WIDTH + 2 * COMPOSER_SHADOW_ROOM)
         inner = QVBoxLayout(column)
         inner.setContentsMargins(COMPOSER_SHADOW_ROOM, 0, COMPOSER_SHADOW_ROOM, 0)
         inner.setSpacing(8)
         inner.addWidget(self.composer)
-        inner.addWidget(foot)
+        inner.addWidget(self._foot)
         
         wrap = QWidget()
         row = QHBoxLayout(wrap)
         row.setContentsMargins(24 - COMPOSER_SHADOW_ROOM, 8, 24 - COMPOSER_SHADOW_ROOM, 14)
         row.addStretch(1)
-        row.addWidget(column, 100)              # stretch 100 vs 1: stĺpec berie miesto až po max. šírku,
-        row.addStretch(1)                       # zvyšok sa rozdelí rovnako po bokoch → vycentrované
+        row.addWidget(column, 100)
+        row.addStretch(1)
         return wrap
+    
+    
+    def _welcome_block(self) -> QWidget:
+        logo = QLabel()
+        logo.setFixedSize(WELCOME_LOGO, WELCOME_LOGO)
+        logo.setPixmap(QIcon(str(ICO)).pixmap(QSize(WELCOME_LOGO, WELCOME_LOGO)))
+        self._logo_shadow = QGraphicsDropShadowEffect(logo)
+        self._logo_shadow.setBlurRadius(30)
+        self._logo_shadow.setOffset(0, 10)
+        logo.setGraphicsEffect(self._logo_shadow)
+        text = QLabel(WELCOME_TEXT)
+        text.setObjectName("welcomeText")
+        
+        block = QWidget()
+        column = QVBoxLayout(block)
+        column.setContentsMargins(0, 0, 0, 20)
+        column.setSpacing(16)
+        column.addWidget(logo, 0, Qt.AlignmentFlag.AlignHCenter)
+        column.addWidget(text, 0, Qt.AlignmentFlag.AlignHCenter)
+        return block
+
+    
+    def _set_empty(self, empty: bool) -> None:
+        if empty == self._empty:
+            return
+        self._empty = empty
+        grow = QSizePolicy.Policy.Expanding if empty else QSizePolicy.Policy.Fixed
+        self._top.changeSize(0, 0, QSizePolicy.Policy.Minimum, grow)
+        self._bottom.changeSize(0, EMPTY_LIFT if empty else 0, QSizePolicy.Policy.Minimum, grow)
+        self._welcome.setVisible(empty)
+        self.messages.setVisible(not empty)
+        self._foot.setVisible(not empty)
+        self._layout.invalidate()
+    
+    
+    def show_messages(self, messages: list[dict]) -> None:
+        self.messages.set_messages(messages)
+        self._set_empty(not messages)
+    
+    
+    def begin_turn(self, question: str) -> None:
+        self._set_empty(False)
+        self.messages.begin_turn(question)
+    
+    
+    def append_token(self, piece: str) -> None:
+        self.messages.append_token(piece)
+    
+    
+    def finish_turn(self, answer: dict) -> None:
+        self.messages.finish_turn(answer)
+    
+    
+    def roll_back(self) -> None:
+        self.messages.roll_back()
+        self._set_empty(self.messages.is_empty())
     
     
     @staticmethod
@@ -95,3 +171,6 @@ class ChatView(QWidget):
     
     def set_theme(self, theme: str) -> None:
         self.composer.set_theme(theme)
+        self.messages.set_theme(theme)
+        self._logo_shadow.setColor(qcolor(THEMES[theme]["shadow"]))
+        

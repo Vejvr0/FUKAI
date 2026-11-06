@@ -129,6 +129,17 @@ _QSS = Template("""
     QLabel#hwDot[backend="cpu"] { background: $warning; }
 
     QLabel#placeholder { color: $text_muted; font-size: 15px; }
+    
+    QLabel#welcomeText { font-size: 22px; font-weight: 600; }
+    QScrollArea#messageList { background: transparent; border: none; }
+    QFrame#bubble {
+        background: $user_bubble;
+        border-radius: 18px;
+        border-bottom-right-radius: 6px;
+    }
+    QTextBrowser#bubbleText { background: transparent; border: none; color: $user_text; }
+    QTextBrowser#answerText { background: transparent; border: none; color: $text; }
+    QLabel#answerMeta { color: $text_muted; font-size: 12px; }
 
     QFrame#toast {
         background: $menu;

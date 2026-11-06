@@ -538,3 +538,28 @@ Rozhodnutia autora pre 5c: kôš v riadku menu pod myšou, mazanie aj kópie sú
 2. **Zoznam správ** (ALMANAC §8 krok 9 „Ďalej v kroku 9“) – chatovať sa už dá, ale odpovede v okne ešte nevidno.
 3. Kúsok 3b (menu ⋯ pri chate vrátane mazania chatu počas odpovede), KV odhad pre stránku Vlastnosti, overenie na PC 1 (import, mazanie s mmap, kurzor v menu na Windows).
 
+## 2026-11-06 – MacBook: zoznam správ, obyčajný text (krok 9, kúsok 6a)
+
+**Stav na začiatku:** 5c-3 + oprava kurzora commitnuté (`5e0d22c`).
+
+### Hotové
+
+**Kúsok 6a – zoznam správ.** Rozhodnutia autora: scroll počas generovania odomknutý, uvítanie = logo + jedna veta. Bublina otázky vpravo (široká len na text), odpoveď vľavo s avatarom a meta riadkom (model · tok/s · čas, „skrátená“ pri `length`), streamovanie s kurzorom ▍ po 30 ms dávkach, Stop vráti celý ťah (pri prvej správe späť uvítanie), návrat do chatu s bežiacou odpoveďou. Claude navrhol a otestoval v scratchpade, autor prepísal, Claude opravil 8 chýb (zoznam v ALMANAC §8 krok 9, 6a). Testy nad repom: `stream_flow.py` so skutočným Qwenom bez chyby, composer 14/14, snímky v oboch témach.
+
+### Zistenia, ktoré stoja za zápis
+
+| Zistenie | Prečo bolo zradné |
+|---|---|
+| `QScrollArea.setWidget()` zapne obsahu `autoFillBackground` | vypnutie pred `setWidget` nemá účinok – sivé pozadie |
+| `removeWidget` + `deleteLater` bez `hide()` | správy po prepnutí chatu na snímke dvakrát |
+| písmo zo stylesheetu príde až pri polish | bublina „Ok“ ukazovala „O“ |
+| `ProportionalHeight` dáva riadkovanie celé pod riadok | bublina mala dole o 8 px viac než hore |
+| umelá udalosť kolieska sa rodičom nepropaguje | test kolieska musí overovať text a zoznam zvlášť |
+| pri prepise zmizol susedný `connect` | composer by nevyprázdnil pole ani neukázal Stop – žiadna chyba, len nefunkčné tlačidlo |
+
+### Nedoriešené do ďalšej session
+
+1. **Commit** 6a + ALMANAC + SESSIONS (autor); `.gitattributes` má zmazané komentáre – skontrolovať, či zámerne.
+2. **6b – markdown + `pygments`** – rozhodnúť, či markdown už počas streamovania, alebo až po dobehnutí.
+3. Kúsok 3b (menu ⋯ pri chate), KV odhad pre stránku Vlastnosti, overenie na PC 1 (vrátane odozvy UI pred prvým tokenom).
+

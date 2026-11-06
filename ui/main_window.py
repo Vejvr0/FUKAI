@@ -81,6 +81,10 @@ class MainWindow(QMainWindow):
         controller.busy_changed.connect(composer.set_busy)
         controller.model_changed.connect(composer.set_model)
         controller.turn_started.connect(composer.begin_turn)
+        controller.turn_started.connect(self._chat.begin_turn)
+        controller.token.connect(self._chat.append_token)
+        controller.turn_finished.connect(self._chat.finish_turn)
+        controller.turn_rolled_back.connect(lambda _question: self._chat.roll_back())
         controller.turn_finished.connect(composer.end_turn)
         controller.turn_rolled_back.connect(composer.roll_back)
         controller.loading_started.connect(lambda _title: composer.set_loading(True))
@@ -130,6 +134,7 @@ class MainWindow(QMainWindow):
     def _on_chat_opened(self, chat_id: int | None, title: str, messages: list[dict]) -> None:
         self._sidebar.select_chat(chat_id)
         self._chat.set_title(title)
+        self._chat.show_messages(messages)
         self._chat.composer.end_turn()
         self._show_page(PAGE_CHAT)
         self._chat.composer.focus_input()
