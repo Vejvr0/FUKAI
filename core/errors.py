@@ -131,10 +131,7 @@ class ModelImportError(ModelError):
 
 class BackendUnavailableError(ModelError):
     default_message = "Engine pre spúšťanie modelov nie je dostupný."
-    default_hint = (
-        "Nainštaluj llama-cpp-python podľa requirements-llama-*.txt. "
-        "Pri CUDA verzii skontroluj, či je nainštalovaný CUDA Toolkit."
-    )
+    default_hint = "Nainštaluj llama-cpp-python podľa requirements-llama-*.txt."
 
 
 class ModelLoadError(ModelError):

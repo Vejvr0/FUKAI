@@ -18,7 +18,7 @@ __all__ = ["ChatView"]
 
 def hardware_label(hw: HardwareProfile) -> str:
     ram_gb = f"{hw.ram_total_mb / 1024:.0f} GB RAM"
-    if hw.gpu is None:
+    if hw.backend == "cpu":
         return f"CPU · {ram_gb}"
     if hw.gpu.backend == "metal":
         return f"GPU · Apple Metal · {ram_gb}"
@@ -156,7 +156,10 @@ class ChatView(QWidget):
         chip = QFrame()
         chip.setObjectName("hwChip")
         chip.setFixedHeight(28)
-        chip.setToolTip("Detegovaný hardvér")
+        tip = "Detegovaný hardvér"
+        if hardware.gpu is not None and not hardware.gpu_offload:
+            tip += f"\n{hardware.gpu.name} sa nepoužíva - engine je len pre CPU."
+        chip.setToolTip(tip)
         row = QHBoxLayout(chip)
         row.setContentsMargins(12, 0, 12, 0)
         row.setSpacing(8)

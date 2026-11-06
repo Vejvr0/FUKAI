@@ -7,6 +7,7 @@ from PyQt6.QtGui import QIcon
 from core.app_settings import load_settings
 from core.constants import APP_NAME, APP_VERSION
 from core.hardware import HardwareProfile, check_cores, check_gpu, check_os, check_ram, detect
+from core.llm_engine import probe_engine
 from core.errors import ConfigError, FukaiError, Notice
 from storage.database import Database
 from ui.chat_controller import ChatController
@@ -82,8 +83,12 @@ class Application(QApplication):
         self.settings = SettingsStore(settings)
         self.notices.extend(notices)
         
+        self._step(splash, "Spúšťam engine...")
+        engine = probe_engine()
+        print(f"[INFO] llama-cpp-python: {engine.version}, GPU offload: {engine.gpu_offload}", file=sys.stderr)
+        
         self._step(splash, "Analyzujem hardvér...")
-        self.hardware = detect()
+        self.hardware = detect(gpu_offload=engine.gpu_offload)
         for check in (check_os, check_cores, check_ram, check_gpu):
             notice = check(self.hardware)
             if notice is not None:

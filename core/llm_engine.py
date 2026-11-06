@@ -1,5 +1,6 @@
 from __future__ import annotations
 from collections.abc import Iterator
+from dataclasses import dataclass
 from enum import Enum
 import threading
 from types import ModuleType
@@ -15,7 +16,12 @@ from core.errors import (
     Notice,
 )
 
-__all__ = ["LlmEngine", "FinishReason"]
+__all__ = [
+    "LlmEngine",
+    "FinishReason",
+    "EngineInfo",
+    "probe_engine"
+]
 
 _CONTEXT_FAILED = "Failed to create llama_context"
 
@@ -23,19 +29,38 @@ _CONTEXT_FAILED = "Failed to create llama_context"
 def _import_llama() -> ModuleType:
     try:
         import llama_cpp
-    except (ImportError, OSError) as exc:
+    except ImportError as exc:
         raise BackendUnavailableError(f"{type(exc).__name__}: {exc}") from exc
+    except (OSError, RuntimeError) as exc:
+        raise BackendUnavailableError(
+            f"{type(exc).__name__}: {exc}",
+            message="Engine pre spúšťanie modelov sa nepodarilo spustiť.",
+            hint="Chýba systémová knižnica. CUDA verzia potrebuje nainštalovaný CUDA Toolkit 13 - bez neho použi CPU verziu (requirements-llama-win-cuda.txt)."
+        )
     return llama_cpp
 
 
-def _memory_pool(params: LoadParams) -> tuple[int, str]:
-    gpu = detect_gpu()
+def _memory_pool(params: LoadParams, gpu_offload: bool) -> tuple[int, str]:
     ram = free_ram_mb()
-    if params.n_gpu_layers == 0 or gpu is None or gpu.backend == "metal":
+    if params.n_gpu_layers == 0 or not gpu_offload:
+        return ram, "operačnej pamäte"
+    gpu = detect_gpu()
+    if gpu is None or gpu.backend == "metal":
         return ram, "operačnej pamäte"
     if params.n_gpu_layers == -1:
         return gpu.vram_free_mb, "pamäte grafickej karty"
     return gpu.vram_free_mb + ram, "pamäte RAM a grafickej karty"
+
+
+@dataclass(frozen=True)
+class EngineInfo:
+    version: str
+    gpu_offload: bool
+
+
+def probe_engine() -> EngineInfo:
+    llama = _import_llama()
+    return EngineInfo(llama.__version__, bool(llama.llama_supports_gpu_offload()))
 
 
 class FinishReason(Enum):
@@ -74,7 +99,7 @@ class LlmEngine:
             self._unload_locked()
             notices: list[Notice] = []
             need_mb = int(params.model_size_mb * MEMORY_MARGIN)
-            free_mb, where = _memory_pool(params)
+            free_mb, where = _memory_pool(params, llama.llama_supports_gpu_offload())
             if need_mb > free_mb:
                 notices.append(Notice.warning(
                     f"Model potrebuje približne {need_mb / 1024:.1f} GB {where}, "

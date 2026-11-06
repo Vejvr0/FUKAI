@@ -20,15 +20,16 @@ class GpuInfo:
 
 @dataclass
 class HardwareProfile:
-    system: str             # 'Windows' alebo 'Darwin'
-    release: str            # verzia OS na zobrazenie, napr. '11' alebo '15.6.1'
-    os_version: int         # to iste ako cislo na porovnavanie, pozri _os_version()
-    cores_physical: int     # skutočné jadrá
-    cores_logical: int      # jadrá vrátane HyperThreadingu
-    cores_performance: int  # výkonné (P) jadrá; na nehybridnom CPU = cores_physical
-    ram_total_mb: int       # celková RAM
-    ram_available_mb: int   # koľko je jej práve voľnej
-    gpu: GpuInfo | None     # None = nenašla sa použiteľná grafika
+    system: str                 # 'Windows' alebo 'Darwin'
+    release: str                # verzia OS na zobrazenie, napr. '11' alebo '15.6.1'
+    os_version: int             # to iste ako cislo na porovnavanie, pozri _os_version()
+    cores_physical: int         # skutočné jadrá
+    cores_logical: int          # jadrá vrátane HyperThreadingu
+    cores_performance: int      # výkonné (P) jadrá; na nehybridnom CPU = cores_physical
+    ram_total_mb: int           # celková RAM
+    ram_available_mb: int       # koľko je jej práve voľnej
+    gpu: GpuInfo | None         # None = nenašla sa použiteľná grafika
+    gpu_offload: bool = True    # vie nainštalovaný engine použiť GPU (probe_engine pri štarte)
 
     @property
     def hybrid(self) -> bool:
@@ -40,11 +41,11 @@ class HardwareProfile:
 
     @property
     def backend(self) -> str:
-        return self.gpu.backend if self.gpu else "cpu"
+        return self.gpu.backend if self.gpu and self.gpu_offload else "cpu"
 
     @property
     def n_gpu_layers(self) -> int:
-        return -1 if self.gpu else 0
+        return 0 if self.backend == "cpu" else -1
 
 
 def _os_version() -> tuple[str, int]:
@@ -239,7 +240,7 @@ def gpu_arch(compute: str | None) -> tuple[str | None, str | None]:
     return write.get("name"), write.get("wheel")
 
 
-def detect() -> HardwareProfile:
+def detect(*, gpu_offload: bool = True) -> HardwareProfile:
     ram = psutil.virtual_memory()
     release, os_version = _os_version()
     cores_physical = psutil.cpu_count(logical=False)
@@ -253,6 +254,7 @@ def detect() -> HardwareProfile:
         cores_performance=_performance_cores(cores_physical),
         ram_total_mb=ram.total // 1024 // 1024,
         ram_available_mb=free_ram_mb(),
+        gpu_offload=gpu_offload
     )
 
 
@@ -341,6 +343,17 @@ def check_gpu(profil: HardwareProfile) -> Notice | None:
         return Notice.warning(
             "Nenašla sa podporovaná GPU, model pobeží na CPU.",
             hint="Odpovede budú výrazne pomalšie. FUKAI akceleruje na NVIDIA (CUDA) a Apple Silicon (Metal).",
+        )
+    
+    if not profil.gpu_offload:
+        hint = (
+            "Nainštalovaný engine (llama-cpp-python) je len pre CPU. Na zrýchlenie nainštaluj CUDA verziu podľa requirements-llama-win-cuda.txt (potrebuje CUDA Toolkit 13)."
+            if profil.gpu.backend == "cuda" else
+            "Nainštalovaný engine (llama-cpp-python) je zostavený bez podpory Metal - pozri requirements-llama-mac.txt."
+        )
+        return Notice.warning(
+            f"Grafická karta {profil.gpu.name} sa nepoužije, model pobeží na CPU.",
+            hint=hint
         )
 
     if profil.gpu.backend != "cuda":

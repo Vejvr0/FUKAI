@@ -564,8 +564,8 @@ Druhý Windows stroj: i7-11850H, 64 GB, Intel UHD + **NVIDIA T1200 Laptop 4 GB**
 ### Nedoriešené do ďalšej session
 
 1. **Commit** poznatkov z notebooku (ALMANAC + SESSIONS; 6a je commitnuté v `dd06193`, aj so zmazanými komentármi v `.gitattributes`).
-2. **Prepis „Engine pri štarte + 64-bit priebeh importu“** (scratchpad `run12`, 7 súborov, ALMANAC §8 krok 9) – autor prepisuje, Claude skontroluje. Rozhodnutie autora: bez llama-cpp-python appka končí fatálnou chybou, engine sa zisťuje pri štarte spolu s hardvérom a určuje skutočný backend. Cestou zistené: knižnica hlási chýbajúcu DLL ako `RuntimeError`, nie `OSError`.
-   Test composera (`t6/composer_flow.py`) dnes visel aj nad nezmeneným HEAD (Gemma pri ~1,6 GB voľnej RAM) – nesúvisí so zmenou, preveriť pri ďalšom behu.
+2. ✅ **„Engine pri štarte + 64-bit priebeh importu“** (ALMANAC §8 krok 9) – autor prepísal (qint64 commitnuté v `f2a1772`, engine necommitnutý), Claude skontroloval: bez chýb, len dve chýbajúce bodky v radách. Nad repom: `engine_probe.py` 4 scenáre OK, `stream_flow` 18/18, composer 14/14. Rozhodnutie autora: bez llama-cpp-python appka končí fatálnou chybou, engine sa zisťuje pri štarte spolu s hardvérom a určuje skutočný backend. Cestou zistené: knižnica hlási chýbajúcu DLL ako `RuntimeError`, nie `OSError`.
+   Test composera dočasne visel aj nad HEAD – príčina: modely sa presunuli z `FUKAI/models/` do `devdata/models/` a symlinky testovacích domovov v scratchpade viedli do prázdna. Presmerované, prechádza.
 3. **6b – markdown + `pygments`** – rozhodnúť, či markdown už počas streamovania, alebo až po dobehnutí.
 4. Kúsok 3b (menu ⋯ pri chate), KV odhad pre stránku Vlastnosti, overenie na PC 1 (vrátane odozvy UI pred prvým tokenom); CUDA wheel na T1200 (sm_75) – Toolkit nechýba len tu: požiadavka autora je, aby ho používateľ nemusel inštalovať zvlášť (§10).
 
