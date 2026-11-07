@@ -67,6 +67,9 @@ class MainWindow(QMainWindow):
         self._sidebar.page_changed.connect(self._pages.setCurrentIndex)
         self._sidebar.new_chat_request.connect(controller.new_chat)
         self._sidebar.chat_selected.connect(controller.open_chat)
+        self._sidebar.chat_rename_requested.connect(self._on_rename_chat)
+        self._sidebar.chat_delete_requested.connect(self._on_delete_chat)
+        self._sidebar.set_token_source(database.content_tokens)
         controller.chat_opened.connect(self._on_chat_opened)
         controller.chats_changed.connect(self._on_chats_changed)
         controller.notice.connect(self.show_notice)
@@ -145,6 +148,33 @@ class MainWindow(QMainWindow):
         self._sidebar.select_chat(selected)
         if selected is not None and selected == self._controller.chat_id:
             self._chat.set_title(self._chats[selected]["title"])
+
+    def _on_rename_chat(self, chat_id: int, title: str) -> None:
+        try:
+            self._database.rename_chat(chat_id, title)
+        except FukaiError as exc:
+            self.show_notice(exc.as_notice())
+        self._on_chats_changed(self._controller.chat_id)
+
+
+    def _on_delete_chat(self, chat_id: int) -> None:
+        if self._controller.turn_chat_id == chat_id:
+            self.show_notice(Notice.info(
+                "Počas odpovede sa chat zmazať nedá.",
+                hint="Najprv zastav generovanie tlačidlom v riadku na písanie."
+            ))
+            return
+        try:
+            self._database.delete_chat(chat_id)
+        except FukaiError as exc:
+            self.show_notice(exc.as_notice())
+            return
+        if self._controller.chat_id == chat_id:
+            self.reload_chats()
+            self._controller.new_chat()
+        else:
+            self._on_chats_changed(self._controller.chat_id)
+
 
     def _on_loading_started(self, model_title: str) -> None:
         notice = Notice.info("Načítavam model…", hint=f"{model_title} - prvé načítanie môže trvať aj desiatky sekúnd.")

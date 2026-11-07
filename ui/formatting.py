@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-__all__ = ["answer_meta", "size_text"]
+__all__ = ["answer_meta", "size_text", "tokens_text"]
 
 
 def size_text(size_mb: float) -> str:
@@ -19,3 +19,10 @@ def answer_meta(data: dict) -> str:
     if data.get("finish_reason") == "length":
         parts.append("skrátená - dosiahnutý limit tokenov")
     return " · ".join(p for p in parts if p)
+
+
+def tokens_text(count: int) -> str:
+    if count <= 0:
+        return "tokeny sa dopočítajú"
+    word = "token" if count == 1 else "tokeny" if count < 5 else "tokenov"
+    return f"~{count:,} {word}".replace(",", " ")

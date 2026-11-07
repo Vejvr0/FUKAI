@@ -75,6 +75,14 @@ class ChatController(QObject):
     @property
     def model_id(self) -> int | None:
         return self._model_id
+
+
+    @property
+    def turn_chat_id(self) -> int | None:
+        """Chat, do ktorého práve beží ťah – `busy` + `chat_id` nestačia, odpoveď môže
+        dobiehať do iného chatu, než je zobrazený. `None` aj pri ťahu v chate, ktorý ešte
+        nevznikol (§7.1 – chat vzniká s prvou dokončenou odpoveďou)."""
+        return self._turn.chat_id if self._turn is not None else None
     
     
     def _visible(self, turn: _Turn) -> bool:

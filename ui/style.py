@@ -103,14 +103,22 @@ _QSS = Template("""
     QLabel#listLabel { color: $side_muted; font-size: 12px; font-weight: 600; padding: 12px 12px 4px 12px; }
 
     QListWidget#chatList { background: transparent; border: none; outline: 0; color: $side_text; }
-    QListWidget#chatList::item {
-        padding: 0 8px;
-        border: 1px solid transparent;
-        border-radius: 10px;
+    QListWidget#chatList::item { padding: 0; border: none; background: transparent; }
+
+    QFrame#chatRow { border: 1px solid transparent; border-radius: 10px; background: transparent; }
+    QFrame#chatRow:hover { background: $hover; }
+    QFrame#chatRow[active="true"] { background: $side_glass; border-color: $side_glass_border; }
+    QLabel#chatTitle { color: $side_text; }
+    QLineEdit#chatEdit {
+        background: $side_input;
+        border: 1px solid $side_glass_border;
+        border-radius: 7px;
+        padding: 0 6px;
         color: $side_text;
+        selection-background-color: $accent; selection-color: #0D1E48;
     }
-    QListWidget#chatList::item:hover    { background: $hover; }
-    QListWidget#chatList::item:selected { background: $side_glass; border-color: $side_glass_border; }
+    QToolButton#chatMore { border: none; border-radius: 7px; background: transparent; }
+    QToolButton#chatMore:hover { background: $hover; }
 
     QScrollBar:vertical { background: transparent; width: 8px; margin: 0; }
     QScrollBar::handle:vertical { background: $chip_hover; border-radius: 4px; min-height: 24px; }
@@ -155,7 +163,6 @@ _QSS = Template("""
         border-radius: 6px; padding: 3px 8px; font-size: 12px;
     }
     QToolButton#codeCopy:hover { background: $code_scroll; }
-    /* pozadie kreslí rámec #codeBlock, aby zaoblené rohy neorezali deti */
     QTextBrowser#codeBody  { background: transparent; border: none; color: $code_text; }
     QTextBrowser#tableBody { background: transparent; border: none; color: $text; }
     QFrame#codeBlock QScrollBar::handle:horizontal,
@@ -209,17 +216,17 @@ _QSS = Template("""
     QToolButton#send:hover { background: $send_hover; }
     QToolButton#send:disabled { background: $chip; }
 
-    QMenu#modelMenu {
+    QMenu#modelMenu, QMenu#chatMenu {
         background: $menu;
         border: 1px solid $glass_border;
         border-radius: 14px;
         padding: 6px;
         color: $text;
     }
-    QMenu#modelMenu::item { padding: 8px 10px; border-radius: 9px; color: $text; }
-    QMenu#modelMenu::item:selected { background: $chip; }
-    QMenu#modelMenu::item:disabled { color: $text_muted; }
-    QMenu#modelMenu::separator { height: 1px; background: $line; margin: 4px 6px; }
+    QMenu#modelMenu::item, QMenu#chatMenu::item { padding: 8px 10px; border-radius: 9px; color: $text; }
+    QMenu#modelMenu::item:selected, QMenu#chatMenu::item:selected { background: $chip; }
+    QMenu#modelMenu::item:disabled, QMenu#chatMenu::item:disabled { color: $text_muted; }
+    QMenu#modelMenu::separator, QMenu#chatMenu::separator { height: 1px; background: $line; margin: 4px 6px; }
     QLabel#menuLabel {
         color: $text_muted; font-size: 11px; font-weight: 600;
         padding: 6px 10px 4px 10px;
@@ -237,8 +244,6 @@ _RGBA = re.compile(r"rgba\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*([\d.]+)\s*\)"
 
 
 def qcolor(value: str) -> QColor:
-    """Token témy → QColor. Treba tam, kam QSS nesiaha (tieň, placeholder); QColor sám
-    zápis `rgba(r, g, b, 0.58)` z CSS nepozná – vráti neplatnú farbu, teda čiernu."""
     match = _RGBA.fullmatch(value.strip())
     if match is None:
         return QColor(value)
