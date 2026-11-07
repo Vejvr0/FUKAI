@@ -1,17 +1,20 @@
 from __future__ import annotations
 from math import ceil
 from PyQt6.QtWidgets import (
-    QFrame, QHBoxLayout, QVBoxLayout, QLabel, QScrollArea, QTextBrowser, QWidget
+    QFrame, QHBoxLayout, QVBoxLayout, QLabel, QScrollArea, QTextBrowser, QToolButton, QWidget
 )
 from PyQt6.QtCore import QEvent, QObject, QSize, Qt, QTimer
 from PyQt6.QtGui import (
-    QColor, QFontMetricsF, QIcon, QTextBlockFormat, QTextCharFormat, QTextCursor, QTextOption
+    QColor, QFontMetricsF, QGuiApplication, QIcon, QTextBlockFormat, QTextCharFormat,
+    QTextCursor, QTextOption
 )
 from ui.constants import (
-    AVATAR_SIZE, BUBBLE_MAX_RATIO, CARET, COMPOSER_MAX_WIDTH, ICO, LINE_HEIGHT,
-    MESSAGE_SPACING, STICK_MARGIN, STREAM_FLUSH_MS
+    AVATAR_SIZE, BOX_MARGIN, BUBBLE_MAX_RATIO, CARET, CODE_HEAD_HEIGHT, CODE_MAX_HEIGHT,
+    CODE_NO_LANGUAGE, COMPOSER_MAX_WIDTH, COPY_DONE_LABEL, COPY_LABEL, COPY_RESET_MS, ICO,
+    LINE_HEIGHT, MESSAGE_SPACING, STICK_MARGIN, STREAM_FLUSH_MS
 )
 from ui.formatting import answer_meta
+from ui.markdown import MD_FEATURES, PartKind, code_html, split_markdown, style_tables
 from ui.style import THEMES
 
 __all__ = ["MessageList"]
@@ -36,12 +39,23 @@ class _TextView(QTextBrowser):
         
     def set_plain(self, text: str) -> None:
         self.setPlainText(text)
+        self._line_height()
+        self._caret = False
+    
+    
+    def set_markdown(self, text: str) -> None:
+        """Markdown až po dobehnutí odpovede – počas streamovania ide `set_plain`."""
+        self.document().setMarkdown(text, MD_FEATURES)
+        self._line_height()
+        self._caret = False
+    
+    
+    def _line_height(self) -> None:
         cursor = QTextCursor(self.document())
         cursor.select(QTextCursor.SelectionType.Document)
         block = QTextBlockFormat()
         block.setLineHeight(LINE_HEIGHT, QTextBlockFormat.LineHeightTypes.ProportionalHeight.value)
         cursor.mergeBlockFormat(block)
-        self._caret = False
     
     
     def fit(self, width: int, *, shrink: bool = False) -> None:
@@ -96,6 +110,121 @@ class _TextView(QTextBrowser):
         event.ignore()
 
 
+class _Body(QTextBrowser):
+    """Okno pre kód a tabuľku: bez zalamovania, s vodorovným posuvníkom a stropom výšky.
+
+    Koliesko si necháva, len kým je kam posúvať – inak ho pustí zoznamu správ.
+    """
+    
+    def __init__(self, object_name: str, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setObjectName(object_name)
+        self.setFrameShape(QFrame.Shape.NoFrame)
+        self.setLineWrapMode(QTextBrowser.LineWrapMode.NoWrap)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.setOpenLinks(False)
+        self.viewport().setAutoFillBackground(False)        # pozadie kreslí rámec bloku
+        self.document().setDocumentMargin(BOX_MARGIN)
+    
+    
+    def fit(self, width: int, cap: int = CODE_MAX_HEIGHT) -> None:
+        self.setFixedWidth(width)
+        doc = self.document()
+        doc.setTextWidth(-1)                                # prirodzená šírka, nie šírka okna
+        height = ceil(doc.size().height()) + 2 * self.frameWidth()
+        if doc.idealWidth() > width:
+            height += self.horizontalScrollBar().sizeHint().height()
+        capped = height > cap
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded if capped
+                                        else Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.setFixedHeight(min(height, cap))
+    
+    
+    def reset_view(self) -> None:
+        """Po setHtml/setMarkdown zostane kurzor na konci a pohľad za ním odskočí –
+        pri širokej tabuľke potom vidno posledné stĺpce. Rozsah posuvníka v tej chvíli
+        ešte neexistuje, takže setValue(0) nestačí; treba presunúť kurzor."""
+        self.moveCursor(QTextCursor.MoveOperation.Start)
+    
+    
+    def wheelEvent(self, event) -> None:
+        bar = self.verticalScrollBar()
+        delta = event.angleDelta().y()
+        scrollable = bar.maximum() > 0 and (
+            (delta < 0 and bar.value() < bar.maximum()) or (delta > 0 and bar.value() > 0))
+        if scrollable:
+            super().wheelEvent(event)
+        else:
+            event.ignore()
+
+
+class _CodeBlock(QFrame):
+    def __init__(self, code: str, language: str, theme: str, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setObjectName("codeBlock")
+        self._code = code
+        self._language = language
+        
+        name = QLabel(language or CODE_NO_LANGUAGE)
+        name.setObjectName("codeLang")
+        self._copy = QToolButton()
+        self._copy.setObjectName("codeCopy")
+        self._copy.setText(COPY_LABEL)
+        self._copy.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._copy.clicked.connect(self._on_copy)
+        self._reset = QTimer(self)                          # dieťa widgetu, zanikne s ním
+        self._reset.setSingleShot(True)
+        self._reset.setInterval(COPY_RESET_MS)
+        self._reset.timeout.connect(lambda: self._copy.setText(COPY_LABEL))
+        
+        head = QFrame()
+        head.setObjectName("codeHead")
+        head.setFixedHeight(CODE_HEAD_HEIGHT)
+        row = QHBoxLayout(head)
+        row.setContentsMargins(12, 0, 8, 0)
+        row.addWidget(name, 1)
+        row.addWidget(self._copy)
+        
+        self.body = _Body("codeBody")
+        column = QVBoxLayout(self)
+        column.setContentsMargins(0, 0, 0, 0)
+        column.setSpacing(0)
+        column.addWidget(head)
+        column.addWidget(self.body)
+        self.set_theme(theme)
+    
+    
+    def set_theme(self, theme: str) -> None:
+        self.body.setHtml(code_html(self._code, self._language, theme))
+        self.body.reset_view()
+    
+    
+    def fit(self, width: int) -> None:
+        self.body.fit(width, CODE_MAX_HEIGHT)
+        self.setFixedHeight(self.body.height() + CODE_HEAD_HEIGHT)
+    
+    
+    def _on_copy(self) -> None:
+        QGuiApplication.clipboard().setText(self._code)
+        self._copy.setText(COPY_DONE_LABEL)
+        self._reset.start()
+
+
+class _TableBox(_Body):
+    def __init__(self, markdown: str, theme: str, parent: QWidget | None = None) -> None:
+        super().__init__("tableBody", parent)
+        self._markdown = markdown
+        self.set_theme(theme)
+    
+    
+    def set_theme(self, theme: str) -> None:
+        doc = self.document()
+        doc.setMarkdown(self._markdown, MD_FEATURES)
+        style_tables(doc, theme)
+        self.reset_view()
+
+
 class _UserMessage(QWidget):
     def __init__(self, text: str, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -117,68 +246,113 @@ class _UserMessage(QWidget):
 
 
 class _AnswerMessage(QWidget):
-    def __init__(self, avatar: QIcon, parent: QWidget | None = None) -> None:
+    """Počas streamovania jeden `_TextView` s obyčajným textom, po dobehnutí zoznam
+    častí: markdown, bloky kódu a tabuľky (§8 krok 9, kúsok 6b)."""
+
+    def __init__(self, avatar: QIcon, theme: str = "light", parent: QWidget | None = None) -> None:
         super().__init__(parent)
         face = QLabel()
         face.setObjectName("avatar")
         face.setFixedSize(AVATAR_SIZE, AVATAR_SIZE)
         face.setPixmap(avatar.pixmap(QSize(AVATAR_SIZE, AVATAR_SIZE)))
-        self.text = _TextView("answerText")
+        self.text: _TextView | None = None          # vzniká až pri streamovaní
         self._meta = QLabel()
         self._meta.setObjectName("answerMeta")
         self._meta.hide()
-        
-        body = QVBoxLayout()
-        body.setContentsMargins(0, 4, 0, 0)
-        body.setSpacing(8)
-        body.addWidget(self.text)
-        body.addWidget(self._meta)
+
+        self._body = QVBoxLayout()
+        self._body.setContentsMargins(0, 4, 0, 0)
+        self._body.setSpacing(8)
+        self._body.addWidget(self._meta)
         row = QHBoxLayout(self)
         row.setContentsMargins(0, 0, 0, 0)
         row.setSpacing(12)
         row.addWidget(face, 0, Qt.AlignmentFlag.AlignTop)
-        row.addLayout(body, 1)
-        
+        row.addLayout(self._body, 1)
+
+        self._parts: list[QWidget] = []
+        self._theme = theme
         self._pending: list[str] = []
         self._flush_timer = QTimer(self)
         self._flush_timer.setSingleShot(True)
         self._flush_timer.setInterval(STREAM_FLUSH_MS)
         self._flush_timer.timeout.connect(self._flush)
         self._width = 0
-        
-    
+
+
     def fit(self, width: int) -> None:
         self._width = width
-        self.text.fit(width - AVATAR_SIZE - 12)
-    
-    
+        inner = width - AVATAR_SIZE - 12
+        if self.text is not None:
+            self.text.fit(inner)
+        for part in self._parts:
+            part.fit(inner)
+
+
     def show_answer(self, data: dict) -> None:
         self._flush_timer.stop()
         self._pending.clear()
-        self.text.set_plain(data.get("text", ""))
+        self._build(data.get("text", ""))
         meta = answer_meta(data)
         self._meta.setText(meta)
         self._meta.setVisible(bool(meta))
         self.fit(self._width)
-    
-    
+
+
+    def set_theme(self, theme: str) -> None:
+        """Kód a tabuľky treba prerenderovať – farby sú zapečené v HTML a vo formáte."""
+        self._theme = theme
+        for part in self._parts:
+            if isinstance(part, (_CodeBlock, _TableBox)):
+                part.set_theme(theme)
+        self.fit(self._width)
+
+
     def start(self, caret_color: str) -> None:
+        self._clear()
+        self.text = _TextView("answerText")
+        self._body.insertWidget(0, self.text)
         self.text.set_plain("")
         self.text.show_caret(caret_color)
         self.fit(self._width)
-    
-    
+
+
     def append(self, piece: str) -> None:
         self._pending.append(piece)
         if not self._flush_timer.isActive():
             self._flush_timer.start()
-    
-    
+
+
     def _flush(self) -> None:
-        if self._pending:
+        if self._pending and self.text is not None:
             self.text.insert("".join(self._pending))
             self._pending.clear()
             self.fit(self._width)
+
+
+    def _build(self, text: str) -> None:
+        self._clear()
+        for index, part in enumerate(split_markdown(text)):
+            if part.kind is PartKind.CODE:
+                widget = _CodeBlock(part.content, part.language, self._theme)
+            elif part.kind is PartKind.TABLE:
+                widget = _TableBox(part.content, self._theme)
+            else:
+                widget = _TextView("answerText")
+                widget.set_markdown(part.content)
+            self._parts.append(widget)
+            self._body.insertWidget(index, widget)
+
+
+    def _clear(self) -> None:
+        for widget in (*self._parts, self.text):
+            if widget is None:
+                continue
+            self._body.removeWidget(widget)
+            widget.hide()                           # bez toho zostane visieť na starom mieste
+            widget.deleteLater()
+        self._parts.clear()
+        self.text = None
 
 
 class MessageList(QScrollArea):
@@ -212,6 +386,7 @@ class MessageList(QScrollArea):
         self._stick = True
         self._turn: tuple[_UserMessage, _AnswerMessage] | None = None
         self._avatar = QIcon(str(ICO))
+        self._theme = "light"
         self._caret_color = THEMES["light"]["accent_strong"]
         
         bar = self.verticalScrollBar()
@@ -220,7 +395,12 @@ class MessageList(QScrollArea):
 
     
     def set_theme(self, theme: str) -> None:
+        self._theme = theme
         self._caret_color = THEMES[theme]["accent_strong"]
+        for index in range(self._items.count() - 1):
+            widget = self._items.itemAt(index).widget()
+            if isinstance(widget, _AnswerMessage):
+                widget.set_theme(theme)
     
     
     def is_empty(self) -> bool:
@@ -232,7 +412,7 @@ class MessageList(QScrollArea):
         for message in messages:
             data = message.get("data") or {}
             if message.get("role") == "assistant":
-                answer = _AnswerMessage(self._avatar)
+                answer = _AnswerMessage(self._avatar, self._theme)
                 self._add(answer)
                 answer.show_answer(data)
             else:
@@ -244,7 +424,7 @@ class MessageList(QScrollArea):
         if self._turn is not None:
             return
         user = _UserMessage(question)
-        answer = _AnswerMessage(self._avatar)
+        answer = _AnswerMessage(self._avatar, self._theme)
         self._add(user)
         self._add(answer)
         answer.start(self._caret_color)
@@ -258,9 +438,14 @@ class MessageList(QScrollArea):
     
     
     def finish_turn(self, answer: dict) -> None:
-        if self._turn is not None:
-            self._turn[1].show_answer(answer)
-            self._turn = None
+        if self._turn is None:
+            return
+        bar = self.verticalScrollBar()
+        value = bar.value()
+        self._turn[1].show_answer(answer)       # obsah sa prestaví na časti, výška sa zmení
+        self._turn = None
+        if not self._stick:                     # kto čítal vyššie, nemá odskočiť dole
+            QTimer.singleShot(0, lambda: bar.setValue(min(value, bar.maximum())))
     
     
     def roll_back(self) -> None:
@@ -296,7 +481,11 @@ class MessageList(QScrollArea):
     
     
     def _on_value_changed(self, value: int) -> None:
-        self._stick = value >= self.verticalScrollBar().maximum() - STICK_MARGIN
+        maximum = self.verticalScrollBar().maximum()
+        if maximum <= 0:
+            return          # obsah sa zmestí do okna – pri prestavbe správy sa rozsah
+                            # nakrátko zmenší na nulu a "som dole" sa nesmie prepnúť
+        self._stick = value >= maximum - STICK_MARGIN
     
     
     def _on_range_changed(self, minimum: int, maximum: int) -> None:

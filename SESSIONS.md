@@ -569,3 +569,50 @@ Druhý Windows stroj: i7-11850H, 64 GB, Intel UHD + **NVIDIA T1200 Laptop 4 GB**
 3. **6b – markdown + `pygments`** – rozhodnúť, či markdown už počas streamovania, alebo až po dobehnutí.
 4. Kúsok 3b (menu ⋯ pri chate), KV odhad pre stránku Vlastnosti, overenie na PC 1 (vrátane odozvy UI pred prvým tokenom); CUDA wheel na T1200 (sm_75) – Toolkit nechýba len tu: požiadavka autora je, aby ho používateľ nemusel inštalovať zvlášť (§10).
 
+
+## 2026-11-06 – PC 1: kompletný test appky na Windows
+
+**Stav na začiatku:** `41b9375`, čistý pracovný strom. Zadanie: `TODO-PC.md` (OneDrive `semestralka/`), pripravené na MacBooku.
+
+### Hotové
+
+**Celý test podľa TODO-PC prešiel – 5 oblastí, žiadna chyba v kóde.** Výsledky, čísla a dve nové zistenia sú v ALMANAC §8 krok 9 („Test celej appky na PC 1“). Stručne: štart a detekcia CUDA, ikona na paneli úloh, Fusion rozostupy, sken a import modelov (vrátane 4,1 GB a zrušenia), zaoblené menu s kurzorom ruky, chat na GPU (Gemma 107 tok/s, Mistral 77 tok/s), scroll a koliesko, Stop, prepnutie chatu počas odpovede, skrátená odpoveď, mazanie modelu s mmap a obe cesty ukončenia.
+
+**Ako sa testovalo.** Skripty v scratchpade (`t1`–`t7`) postavia skutočnú `Application`, nechajú ju bežať **v živom okne na platforme `windows`** a riadia ju cez signály UI (`send_requested`, `_open_model_menu`, `_on_delete_model`), nie obídením vrstiev. Offscreen by neoveril práve to, kvôli čomu sa na PC testuje: Fusion, priehľadné menu, natívny dialóg, mmap a kurzor. Kurzor sa meria cez `GetCursorInfo` (obdoba merania `NSCursor` z 2026-11-06 na Macu), VRAM cez `nvidia-smi`, natívny dialóg hľadá a zatvára obyčajné Python vlákno cez Win32 (Qt je dovtedy v modálnej slučke).
+
+**Zapísané do ALMANAC:** §4 – PC 1 má driver 621.14 a overenú celú appku; §8 krok 0 – PyQt6 6.11.0 na PC 1 overené; §7 – doplnené stlmenie fd pri `verbose=False`; §8 krok 9 – blok s výsledkami a „Overiť na PC 1“ nahradené tým, čo zostáva neoverené.
+
+### Zistenia, ktoré stoja za zápis
+
+| Zistenie | Prečo bolo zradné |
+|---|---|
+| `suppress_stdout_stderr` v llama-cpp-python presmeruje fd 1 a 2 **celého procesu** | počas načítania modelu mlčí aj UI vlákno – vyzeralo to, že časovače nebežia, hoci sloty bežali a len ich výpis zmizol; stálo to najviac času z celého testu |
+| `QTimer.singleShot(ms, obj.metóda)` pri `obj`, ktorý nie je `QObject` | PyQt drží slabú referenciu – testovací objekt zanikol a časovač ticho nič nezavolal (prvý príznak: menu sa nikdy nezavrelo a test visel) |
+| konzola cp1250 a `print("▍")` v slote | `UnicodeEncodeError` v slote = PyQt ukončí proces (`0xC0000409`), čo vyzerá ako pád CUDA; testy púšťať s `PYTHONIOENCODING=utf-8` |
+| prvá verzia testu scrollu | rez bol spravený 1,5 s po prvom tokene, keď `maximum()` bolo ešte 0 – „odrolovanie hore“ neurobilo nič a [FAIL] bol na teste, nie na appke |
+| mazanie načítaného modelu na Windows | prvý skutočný dôkaz poradia pamäť → súbor → riadok; na macOS sa namapovaný súbor zmazať dá vždy, takže tam test nič nedokazoval |
+| warm-up po štarte systému | prvé generovanie 6,3 tok/s, ďalšie 107 tok/s; `ComputeCache` naďalej neexistuje, takže PTX JIT sa nepotvrdil ani teraz |
+
+
+### Kúsok 6b – markdown (to isté popoludnie)
+
+Po teste nasledoval markdown. Rozhodnutia autora: renderovať **až po dobehnutí** odpovede, kód do samostatného okna so **stropom 400 px**, tlačidlom Kopírovať a vodorovným posuvníkom, **širokú tabuľku tiež** do posúvateľného okna, farby syntaxe **vlastné z tokenov FUKAI**. Claude navrhol a overil prototypom, napísal `ui/markdown.py` do scratchpadu; autor ho prepísal a konštanty presunul do `ui/constants.py`; Claude opravil tri chyby prepisu a dorobil `_Body`, `_CodeBlock`, `_TableBox`, QSS a zapojenie do `_AnswerMessage`. Podrobnosti v ALMANAC §8 krok 9 („Kúsok 6b“).
+
+| Zistenie | Prečo bolo zradné |
+|---|---|
+| `MarkdownDialectGitHub` bez `MarkdownNoHTML` | Qt interpretuje surové HTML a **ticho zje zvyšok odseku** – stačí, že model napíše `a < b` |
+| nefarebné tokeny pygments dedia farbu widgetu | polovica kódu bola neviditeľná; `<pre>` musí mať `color` |
+| `QColor("rgba(...)")` | neplatná farba → čierne pozadie hlavičky tabuľky; na tokeny treba `qcolor()` (pasca z 5a) |
+| po `setMarkdown` zostane pohľad na konci | široká tabuľka ukazovala posledné stĺpce; `setValue(0)` nestačí, rozsah ešte neexistuje – treba `moveCursor(Start)` |
+| prestavba správy na časti nakrátko zmenší obsah | rozsah spadne na nulu, „som dole“ sa prepne na True a po dokončení odpovede zoznam **odskočí dole**, hoci používateľ čítal vyššie; prejavovalo sa to len občas |
+| `_AnswerMessage.text` je po dobehnutí `None` | test siahal na `.text` → `AttributeError` v slote = tichý koniec procesu (výpis zje stlmenie fd pri načítaní modelu) |
+
+Testy: `python -m ui.markdown` 24 kontrol, `t8_markdown_ui.py` 20, `t11_finish_scroll.py`, regresia `t3c` 9/9 dvakrát, `t3b` 19/19 a `t9_live_markdown.py` so skutočnou odpoveďou Gemmy (kód + tabuľka + zoznam) v živom okne.
+
+### Nedoriešené do ďalšej session
+
+1. **Commit** (autor): `ui/markdown.py`, `ui/message_list.py`, `ui/style.py`, `ui/constants.py`, ALMANAC a SESSIONS.
+2. **6b je hotový a necommitnutý** – prejsť si diff `ui/markdown.py`, `ui/message_list.py`, `ui/style.py`, `ui/constants.py`. Zvážiť: výber textu cez viac častí nejde, tabuľka vnorená v odrážke nedostane rám, podfarbenie hlavičky tabuľky (`chip`) je jemné.
+3. Na Windows neoverené: chat dlhý natoľko, že sa orezáva história (`dropped`), a plná VRAM. Tmavá téma je overená živým testom 6b.
+4. Kúsok 3b (menu ⋯ pri chate), KV odhad pre stránku Vlastnosti.
+5. V `devdata/models` zostali Gemma a Mistral (skopírované z `../llama-chatbot/models`), v `devdata/fukai.db` testovacie chaty – pokojne zmazať.

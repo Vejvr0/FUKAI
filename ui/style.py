@@ -27,6 +27,7 @@ THEMES: dict[str, dict[str, str]] = {
         "user_bubble": "#2A368B", "user_text": "#FFFFFF",
         "send": "#2A368B", "send_hover": "#3644A3", "send_text": "#FFFFFF",
         "code_bg": "#0D1E48", "code_text": "#CDEFFB",
+        "code_scroll": "rgba(205, 239, 251, 0.30)",
         "menu": "#F5FBFE", "shadow": "rgba(13, 30, 72, 0.20)",
         "ok": "#2ECC71", "warning": "#E0A100", "danger": "#C62828",
     },
@@ -52,6 +53,7 @@ THEMES: dict[str, dict[str, str]] = {
         "user_bubble": "#3D87B6", "user_text": "#FFFFFF",
         "send": "#6EC6E5", "send_hover": "#8AD3EC", "send_text": "#0D1E48",
         "code_bg": "#0A1736", "code_text": "#BDE8F7",
+        "code_scroll": "rgba(189, 232, 247, 0.26)",
         "menu": "#1F3760", "shadow": "rgba(0, 0, 0, 0.40)",
         "ok": "#2ECC71", "warning": "#F0B429", "danger": "#FF8A80",
     },
@@ -114,6 +116,10 @@ _QSS = Template("""
     QScrollBar::handle:vertical { background: $chip_hover; border-radius: 4px; min-height: 24px; }
     QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
     QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { background: transparent; }
+    QScrollBar:horizontal { background: transparent; height: 8px; margin: 0; }
+    QScrollBar::handle:horizontal { background: $chip_hover; border-radius: 4px; min-width: 24px; }
+    QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal { width: 0; }
+    QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal { background: transparent; }
     
     QFrame#panel {
         background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 $panel_top, stop:1 $panel_bottom);
@@ -140,6 +146,20 @@ _QSS = Template("""
     QTextBrowser#bubbleText { background: transparent; border: none; color: $user_text; }
     QTextBrowser#answerText { background: transparent; border: none; color: $text; }
     QLabel#answerMeta { color: $text_muted; font-size: 12px; }
+
+    QFrame#codeBlock { background: $code_bg; border: 1px solid $line; border-radius: 10px; }
+    QFrame#codeHead  { background: transparent; border: none; border-bottom: 1px solid $code_scroll; }
+    QLabel#codeLang  { color: $code_text; font-size: 12px; }
+    QToolButton#codeCopy {
+        color: $code_text; background: transparent; border: none;
+        border-radius: 6px; padding: 3px 8px; font-size: 12px;
+    }
+    QToolButton#codeCopy:hover { background: $code_scroll; }
+    /* pozadie kreslí rámec #codeBlock, aby zaoblené rohy neorezali deti */
+    QTextBrowser#codeBody  { background: transparent; border: none; color: $code_text; }
+    QTextBrowser#tableBody { background: transparent; border: none; color: $text; }
+    QFrame#codeBlock QScrollBar::handle:horizontal,
+    QFrame#codeBlock QScrollBar::handle:vertical { background: $code_scroll; }
 
     QFrame#toast {
         background: $menu;

@@ -101,7 +101,7 @@ Compute capability je vlastnosť kremíka a aktualizáciou ovládača sa **nikdy
 | Stroj | CPU | GPU / VRAM | RAM | Backend |
 |---|---|---|---|---|
 | MacBook | Apple M2 (4P + 4E) | integrovaná, zdieľaná pamäť | **8 GB unified** | Metal – `core/hardware.py` *overené 2026-10-28* |
-| PC 1 | Intel Core Ultra 7 265K (8P + 12E, bez HT) | RTX 5060 Ti **16 GB** (Blackwell, sm_120) | 32 GB | CUDA Toolkit 13.0, driver 617.42 – *offload na GPU overený 2026-10-28, pozri §3* |
+| PC 1 | Intel Core Ultra 7 265K (8P + 12E, bez HT) | RTX 5060 Ti **16 GB** (Blackwell, sm_120) | 32 GB | CUDA Toolkit 13.0, driver 621.14 – *offload na GPU overený 2026-10-28, pozri §3; celá appka vrátane UI overená 2026-11-06, §8 krok 9* |
 | PC 2 | – | RTX 4080 16 GB (Ada, sm_89) | – | CUDA, wheel `sm89` (pozri §3.1) |
 | Notebook | Intel Core i7-11850H (8C/16T, bez E-jadier) | Intel UHD + NVIDIA T1200 Laptop **4 GB** (Turing, sm_75), Optimus | 64 GB | *2026-11-06: `detect()` našiel T1200 → `backend=cuda`; nainštalovaný **CPU wheel** 0.3.36, Gemma 3 4B 13–14 tok/s (§8 krok 9, poznatky z notebooku)*; CUDA wheel neskúšaný |
 
@@ -186,7 +186,7 @@ Plochá štruktúra (nie `src/fukai/`) – je to aplikácia, nie knižnica, a je
 - **Vlákna:** načítanie aj generovanie mimo UI vlákna (QThread worker), tokeny do UI cez signály. Stop = prerušenie generátora.
 - **Chat template:** vždy `create_chat_completion()` – template sa berie z metadát `.gguf`. Žiadne ručné skladanie promptov. *Overené 2026-10-28: gemma-3-4b má `tokenizer.chat_template` v metadátach a llama-cpp-python ho zvolí samo (`chat_format == "chat_template.default"`).*
 - **Počet vrstiev pre slider `n_gpu_layers`:** `llama_model_n_layer()` vráti počet **blokov** (gemma-3-4b: 34), ale llama.cpp offloaduje **35/35** – navyše je výstupná vrstva. Maximum slidera je teda `n_layer + 1`, v engine ako `n_layers_offloadable`.
-- **`verbose=False` neutíši llama.cpp celkom** – časť hlásení ide na stderr aj tak (napr. `llama_kv_cache_iswa: ...`). Pri UI bude treba stderr presmerovať, nestačí prepínač.
+- **`verbose=False` neutíši llama.cpp celkom** – časť hlásení ide na stderr aj tak (napr. `llama_kv_cache_iswa: ...`). Pri UI bude treba stderr presmerovať, nestačí prepínač. **A naopak: pri `verbose=False` knižnica na čas načítania modelu umlčí celý proces** – `suppress_stdout_stderr` presmeruje deskriptory 1 a 2 na devnull, takže v tom okne mlčí aj UI vlákno (overené na PC 1 2026-11-06, §8 krok 9).
 - **Kontext:** história sa orezáva podľa reálneho počtu tokenov (`llm.tokenize`). Príloha nad limit → orezať + upozorniť. RAG až ako neskorší bonus.
 - **Web:** `ddgs` (DuckDuckGo) na vyhľadávanie, `requests` + `trafilatura` na extrakciu textu. Žiadny scraping Google. Spúšťa používateľ prepínačom, model si ho nevolá sám (tool-calling malých modelov je nespoľahlivý).
 - **Súbory:** `pypdf` (MIT; PyMuPDF je rýchlejší, ale AGPL), `openpyxl`/`pandas` → markdown tabuľka, `python-docx`. OCR mimo rozsahu.
@@ -354,7 +354,7 @@ Platí teda pravidlo: **vnútri `transaction()` sa volá `conn.execute()`, nikdy
 
 ## 8. Poradie práce a stav
 
-0. [x] `requirements.txt`, `requirements-llama-win-cuda.txt`, `requirements-llama-mac.txt` hotové (2026-10-27). V `.venv` na PC 1 je `psutil` + `llama-cpp-python` 0.3.36 CUDA (2026-10-28). **PyQt6 6.11.0** je na MacBooku (overené 2026-11-02 spustením UI); na PC 1 overiť pred prvým spustením `main.py`.
+0. [x] `requirements.txt`, `requirements-llama-win-cuda.txt`, `requirements-llama-mac.txt` hotové (2026-10-27). V `.venv` na PC 1 je `psutil` + `llama-cpp-python` 0.3.36 CUDA (2026-10-28). **PyQt6 6.11.0** je na MacBooku (overené 2026-11-02 spustením UI) **aj na PC 1** (overené 2026-11-06 spustením appky: Python 3.12.10 v `.venv`, PyQt6 aj Qt 6.11.0).
 1. [x] `core/errors.py` – hierarchia chýb delená **podľa príčiny**, nie podľa modulu. Každá chyba nesie tri oddelené texty: `message` (veta pre používateľa), `hint` (čo s tým), `detail` (technický text do logu). Plus `Notice` + `Severity` na **nefatálne** oznámenia. Vďaka tomu UI vykresľuje chyby aj varovania rovnako. `hint` je keyword-only, aby sa tie tri texty nedali zameniť.
 2. [x] `core/hardware.py` – detekcia a 4 kontroly (`check_os`, `check_cores`, `check_ram`, `check_gpu`). Overené na PC 1 aj MacBooku. Dáva tri veci, pre ktoré modul existuje: `n_threads` (= `cores_performance`), `n_gpu_layers` (−1/0 podľa backendu) a `backend` (`cuda`/`metal`/`cpu`). **Zásada: detekcia nikdy nevyhodí výnimku von** – zlyhanie sondy sa mení na `Notice` a appka beží na CPU. `required_wheel()` je zvlášť, mimo `check_gpu` – nie je to problém, ale fakt, a hlásiť ho treba až keď llama-cpp-python chýba. Pevné údaje (minimálne verzie OS, mapa compute capability → wheel) sú vo `vars/hw.json`, konštanty v `core/constants.py`.
 3. [x] **`core/llm_engine.py` – prepísaný od nuly, hotový 2026-10-31** (kúsky 1–5 písal autor, 6–8 Claude na jeho žiadosť). Konzolový test: `python -m core.llm_engine [model.gguf] [n_ctx]` – načítanie, údaje o modeli, streaming s t/s, Stop, `LENGTH`. Na M2 Gemma 3 4B ~12–23 t/s (kolíše s voľnou pamäťou), Qwen 2.5 1.5B ~25 t/s. **Overené aj na PC 1 (2026-11-01), Mistral 7B Q4_K_M, `n_ctx=2048`:** load 2,3 s, `offloaded 33/33 layers to GPU` (32 blokov + výstupná → `n_layers + 1` platí aj tu), generovanie 66,9 t/s, Stop aj `LENGTH` v poriadku. Buffery na CUDA0: model 4095 MiB + KV 256 MiB + compute 168 MiB; VRAM 15296 → 10647 MB voľných, teda −4649 MB. Všetky tri vetvy `_memory_pool` dávajú zmysluplné čísla (`-1` → VRAM 15296, `0` → RAM 18240, `16` → 33538 spolu). Žiadny warm-up ako 2026-10-28 (§3) sa nezopakoval. Pôvodná verzia z 2026-10-28: `git show fd59ca9:core/llm_engine.py`.
@@ -723,12 +723,93 @@ Platí teda pravidlo: **vnútri `transaction()` sa volá `conn.execute()`, nikdy
    - **`check_gpu`: GPU je, engine ju nevie použiť → varovanie** „Grafická karta … sa nepoužije, model pobeží na CPU.“ s radou podľa typu (CUDA verzia + Toolkit / build s Metal). Nie fatálne – na CPU sa chatovať dá.
    - **`_memory_pool` dostáva `gpu_offload` od enginu** (`llama_supports_gpu_offload()` v `load()`), nie z profilu. Chaty vytvorené predtým majú v `properties` uložené `n_gpu_layers=-1`; CPU build ho ignoruje, ale varovanie by počítalo s VRAM. Pri CPU builde sa `detect_gpu()` ani nevolá.
    - **`"qint64"` v signáloch s bajtmi** – pozri chybu vyššie.
-   **Ďalej v kroku 9** (stav 2026-11-06; po 6a nasleduje 6b – markdown):
-   - **6b – markdown:** `QTextDocument` + `pygments` v `_AnswerMessage.show_answer()`; bloky kódu ako tabuľka s `bgcolor` (bez zaoblenia), „Kopírovať“ = odkaz `copy:N` + `anchorClicked`. Rozhodnúť: markdown už počas streamovania, alebo až po dobehnutí.
+   **Test celej appky na PC 1 (Windows 11, RTX 5060 Ti 16 GB, CUDA Toolkit 13.0, driver 621.14) – 2026-11-06.**
+   Stav repa `41b9375`, `FUKAI_HOME=devdata`, Python 3.12.10 + PyQt6 6.11.0 + llama-cpp-python 0.3.36 CUDA.
+   Testovalo sa **v živom okne na platforme `windows`** (nie offscreen – inak sa neoverí Fusion, priehľadné menu ani natívny dialóg); appku riadili skripty v scratchpade cez skutočné signály UI, nie obídením vrstiev. **Prešlo všetko, v kóde sa nenašla ani jedna chyba.**
+
+   | Oblasť | Výsledok |
+   |---|---|
+   | Štart | splash *Načítavam nastavenia → Spúšťam engine → Analyzujem hardvér → Otváram databázu → Kontrolujem modely → Pripravené · CUDA*, `[INFO] llama-cpp-python: 0.3.36, GPU offload: True` |
+   | Hardvér | `backend=cuda`, `n_threads=8` (z 20), `n_gpu_layers=-1`, čip **„GPU · RTX 5060 Ti · 16 GB VRAM“**, žiadne varovanie ani `Notice` |
+   | Ikona | na paneli úloh biela zaoblená dlaždica FUKAI, nie Python – AppUserModelID funguje |
+   | Sidebar | medzery tabov **8 / 8 px**, nič sa neprekrýva – Fusion drží rovnaký výsledok ako na Macu |
+   | Sken | `.gguf` skopírovaný do `devdata\models` sa po štarte objavil v zozname + info toast (overené 3×, aj na prázdnej databáze) |
+   | Import 4,1 GB | priebeh **kladný a rastúci** („8 MB z 4,1 GB“ … „4,1 GB z 4,1 GB“) – oprava `qint64` z `f2a1772` platí aj na Windows |
+   | Zrušenie importu | po ✕ v `models/` **nezostal `.part`**, `importing == False`, model sa nezaregistroval |
+   | Menu modelov | zaoblené rohy **bez čiernych/sivých trojuholníkov**, ✓ pri vybranom modeli, podnadpis `Q4_K_M · 4B · 2,3 GB` |
+   | Kurzor v menu | **ruka nad riadkom aj nad košom**, po zatvorení menu sa vráti šípka (merané cez `GetCursorInfo`) – oprava `setOverrideCursor` z 5c-3 je správna aj tu |
+   | Natívny dialóg | „Pridať .gguf model…“ otvorí dialóg *Pridať model* (trieda `#32770`), zrušenie nič neimportuje a appka beží ďalej |
+   | Chat | trvalý toast načítania bez časovej osi, Stop počas načítania vypnutý, kurzor ▍ hneď po odoslaní, meta riadok `model · N tok/s · X,X s` |
+   | Scroll | odrolovaný zoznam **zostane stáť**, aj keď text pribúda; po návrate dole sa znova drží spodku; koliesko nad textom posúva zoznam |
+   | Zalomenie | URL bez medzier 487 px v stĺpci 740 px – bublina nepretečie |
+   | Stop | obe správy ťahu zmizli, otázka späť v poli, pri prvej správe sa vrátilo uvítanie, chat **nevznikol** |
+   | Prepnutie chatu | odchod počas odpovede a návrat → rozpísaná odpoveď s ▍ pokračuje a dobehne |
+   | Skrátená odpoveď | `max_tokens=24` → `finish_reason=length`, meta „skrátená - dosiahnutý limit tokenov“ |
+   | Mazanie | 23/23 vrátane **mmap**: načítaný model sa zmazal aj so súborom (515 ms), zmazanie iného modelu nechalo načítaný v pamäti (ďalšia správa bez reloadu), chat zostal s `model_id = NULL` a hlási „Najprv vyber model.“ |
+   | Ukončenie | počas importu 188 ms (`.part` zmazaný), počas odpovede 203 ms, návratový kód 0, **žiadne `QThread: Destroyed while thread is still running`** |
+
+   **Výkon na GPU** (`n_ctx=4096`, `n_gpu_layers=-1`; VRAM je celé GPU, z toho ~1,3 GB držia iné aplikácie):
+
+   | Model | Načítanie | Prvý token | Rýchlosť | VRAM spolu |
+   |---|---|---|---|---|
+   | Gemma 3 4B Q4_K_M | 1,8 s | 0,44–0,51 s | **107 tok/s** | 4 692 MiB |
+   | Mistral 7B Q4_K_M | 2,2 s | 0,50 s | **77 tok/s** | 6 211 MiB |
+
+   Mistral je rýchlejší než 66,9 tok/s nameraných konzolovo 2026-11-01 (odvtedy novší ovládač). Dlhá odpoveď na 1 023 tokenov (`length`) bežala 94 tok/s.
+
+   **Odozva UI je na PC 1 lepšia než na Macu.** 50 ms časovač: počas generovania medzery 50–63 ms, okolo načítania modelu jednorazovo 156–234 ms. **V dlhom chate (16 správ, prompt 1 803 tokenov) bola najdlhšia medzera pred prvým tokenom 63 ms** a prvý token prišiel po 0,33 s – podozrenie na GIL z kúsku 6a sa tu neprejavilo. Buď je to vlastnosť Macu, alebo to rýchlejší stroj prekryje.
+
+   **Zistenie: počas načítania modelu je celá appka nemá.** `llama-cpp-python` obalí `Llama(...)` pri `verbose=False` manažérom `suppress_stdout_stderr` (`llama_cpp/_utils.py`), ktorý cez `os.dup2` presmeruje **deskriptory 1 a 2 celého procesu** na devnull a vymení aj `sys.stdout` / `sys.stderr`. Načítanie beží vo workeri, takže v tom okne mlčí **aj UI vlákno**: `print`, `Notice.log_line()` aj traceback neodchytenej výnimky sa stratia. Overené meraním – sloty naplánované na čas načítania **naozaj bežali** (zapísali sa do zoznamu), nebolo vidieť len ich výpis; práve toto zdržalo test, lebo to vyzeralo ako nefunkčné časovače. Dôsledky: (1) čokoľvek, čo sa ladí počas načítania, treba písať do súboru, nie na konzolu; (2) logovanie do súboru v kroku 14 nesmie ísť cez `sys.stdout` / `sys.stderr`, inak v ňom budú chýbať práve riadky z načítavania.
+
+   **Warm-up po štarte systému sa zopakoval, príčina stále neoverená.** Úplne prvé načítanie modelu po zapnutí PC generovalo **6,3 tok/s** (56 tokenov za 8,8 s), každý ďalší beh 107 tok/s; samotné načítanie bolo normálne (1,8–2,1 s). Oproti §3 (2026-10-28) to tentoraz nebol pomalý `prompt eval`, ale pomalé generovanie. `%LOCALAPPDATA%\NVIDIA\ComputeCache` **naďalej neexistuje**, takže PTX JIT sa ani teraz nepotvrdil. Pre UI platí to isté: prvé načítanie po štarte systému môže byť citeľne pomalšie.
+
+   **Pasca pri písaní testov (nie v appke):** `QTimer.singleShot(ms, obj.metóda)` drží na `obj` **slabú referenciu**, keď `obj` nie je `QObject` – len čo testovací objekt stratí inú referenciu, časovač ticho nič nezavolá. Testovací objekt treba držať v globále.
+
+   **Kúsok 6b – markdown (2026-11-06, hotové).** Rozhodnutia autora: markdown sa renderuje **až po dobehnutí odpovede** (počas streamovania zostáva obyčajný text), kód ide do **samostatného okna so stropom 400 px** a vlastným zvislým posuvníkom, **široká tabuľka dostane tiež vodorovne posúvateľné okno** a farby kódu sú **vlastná paleta z tokenov FUKAI**, nie hotová téma pygments. Rozsah: bloky kódu, tabuľky, tučné, kurzíva, UL, OL.
+
+   **Odpoveď prestala byť jeden dokument.** `_AnswerMessage` je zvislý zoznam častí: text → `_TextView` so `setMarkdown`, blok kódu → `_CodeBlock`, tabuľka → `_TableBox`. Dôvod je tvrdý: Qt rich text **nevie vodorovný posuvník vnútri dokumentu ani vložené tlačidlo**, takže „okno s kódom, scroll doboku a Kopírovať v hlavičke“ sa do `QTextBrowser`-u nedá vložiť. Tým **padá pôvodný plán zo šablóny** („bloky kódu ako tabuľka s `bgcolor` a `cellpadding`, Kopírovať ako odkaz `copy:N` + `anchorClicked“`).
+
+   Hranica modulov: nový **`ui/markdown.py`** nevie o widgetoch – `Part(kind, content, language)`, `split_markdown(text) -> list[Part]`, `code_html(code, language, theme)`, `style_tables(doc, theme)`. Widgety (`_Body`, `_CodeBlock`, `_TableBox`) sú v `ui/message_list.py`, `CODE_MAX_HEIGHT = 400` v `ui/constants.py`. Poradie kúskov: **6b-1** `split_markdown` + testy (fence, neuzavretý fence, tabuľka), **6b-2** paleta a `code_html`, **6b-3** `_CodeBlock`, **6b-4** `_TableBox` + `style_tables`, **6b-5** zapojenie do `_AnswerMessage.show_answer()` a `set_theme`.
+
+   **Overené prototypom na PC 1** (`p2_blocks.py` v scratchpade, obe témy): `setMarkdown` s `MarkdownDialectGitHub` dá tučné, kurzívu, inline kód, UL aj vnorené, OL aj tabuľku vrátane zarovnania stĺpca cez `---:`; tabuľka sa dá doštylovať `QTextTableFormat` (border 1, `cellPadding 6`, `cellSpacing 0`, `headerRowCount 1`, hlavička `chip`); riadok kódu 776 px v okne 700 px vyrobí vodorovný posuvník (12 px), 40 riadkov kódu narazí na strop (400 + 30 px hlavička) a dostane zvislý posuvník; široká tabuľka `idealWidth` 896 px → vodorovný posuvník; Kopírovať vloží do schránky presne surový kód a tlačidlo sa prepne na „Skopírované“.
+
+   **Pasce, všetky namerané pri prototype:**
+
+   - **Bez `MarkdownNoHTML` Qt interpretuje surové HTML a ticho zje zvyšok odseku.** Vstup `Text <b>html</b> a <img src="…"> koniec.` sa vykreslí ako `Text html a ` – zvyšok vety zmizne. Stačí jedno `<` v odpovedi (porovnanie `a < b`, C++ šablóny, ukážka HTML mimo bloku kódu). Riešenie: `MarkdownDialectGitHub | MarkdownNoHTML`; tabuľky a zvyšok fungujú ďalej. Pozor, GitHub dialekt `NoHTML` **neobsahuje** (0x104f0c & 0x60 == 0).
+   - **Nefarebné tokeny z pygments dedia farbu textu widgetu.** `HtmlFormatter` obalí `<span style="color:…">` len tie tokeny, ktoré téma farbí – ostatné zdedia farbu widgetu a pri nesprávnej farbe je polovica kódu neviditeľná (overené). Kódové okno musí mať `color` nastavenú explicitne v HTML aj v QSS.
+   - **`QColor("rgba(13, 30, 72, 0.07)")` je neplatná farba** → pozadie hlavičky tabuľky vyšlo čierne. Na tokeny s `rgba()` treba `qcolor()` zo `style.py` – tá istá pasca ako pri tieni a placeholderi v kúsku 5a.
+   - **Po `setMarkdown` zostane široký dokument odrolovaný takmer na koniec** (namerané `h = 192/196`), takže z tabuľky vidno posledné stĺpce. Po renderi nastaviť oba posuvníky na 0.
+   - **Rozmery sa musia počítať až po polish** – písmo zo stylesheetu príde neskôr a prvá časť bola inak orezaná. Platí pre každú časť, nielen pre `_TextView` (pasca z 6a).
+   - **Koliesko nad kódom so stropom** musí posúvať kód, kým je kam, a potom udalosť `ignore()`-núť, aby posúvala zoznam správ. Inak sa buď nedá prejsť kódom, alebo sa nedá prejsť chatom.
+   - **QLabel v hlavičke kódu potrebuje priehľadné pozadie** – v prototype s blanket pravidlom `QWidget { background }` prekryl hlavičku farbou stránky. V QSS appky to rieši globálne `QLabel { background: transparent; }`.
+
+   **Čo sa tým stráca:** výber textu myšou cez viac častí (každá časť je vlastný `QTextBrowser`) a zmena témy musí kód prerenderovať, lebo farby sú zapečené v HTML.
+
+
+   **Hotové 2026-11-06 (kúsky 6b-1 až 6b-5).** `ui/markdown.py` navrhol a napísal Claude do scratchpadu, autor ho prepísal a konštanty presunul do `ui/constants.py` (`PLAIN`, `CODE_FONT`, `CODE_FONT_SIZE`, `TABLE_PADDING`, `TABLE_BORDER`); Claude opravil tri chyby prepisu a dorobil widgety, QSS a zapojenie. Súbory: nový **`ui/markdown.py`**; **`ui/message_list.py`** (`_Body`, `_CodeBlock`, `_TableBox`, `_TextView.set_markdown`, prestavaný `_AnswerMessage`); **`ui/constants.py`** (`CODE_MAX_HEIGHT = 400`, `CODE_HEAD_HEIGHT = 30`, `BOX_MARGIN`, `CODE_NO_LANGUAGE`, `COPY_LABEL`, `COPY_DONE_LABEL`, `COPY_RESET_MS`); **`ui/style.py`** (token `code_scroll`, pravidlá vodorovného posuvníka, QSS blokov).
+
+   Rozhodnutia, ktoré pribudli až pri písaní:
+
+   - **`_AnswerMessage.text` žije len počas streamovania, potom je `None`.** Po dobehnutí ho nahradia časti, takže čokoľvek, čo po skončení odpovede siahne na `.text`, dostane `None` (zakoplo o to aj `t3b`). Streamovací `_TextView` sa preto vyrába až v `start()` – načítanie starého chatu ho vôbec nepotrebuje.
+   - **Pozadie kódového okna kreslí rámec `#codeBlock`, telo je priehľadné.** `border-radius` nadradeného widgetu neoreže deti (§8 krok 9 – šablóna), takže keby pozadie kreslilo telo, zaoblené rohy by boli dole hranaté. K tomu patrí `viewport().setAutoFillBackground(False)` – tá istá pasca ako pri `MessageList` v 6a.
+   - **`_Body.reset_view()` po každom `setHtml` / `setMarkdown`.** Kurzor zostane na konci dokumentu a pohľad za ním odskočí – pri širokej tabuľke potom vidno posledné stĺpce. `setValue(0)` to nespraví, lebo v tej chvíli ešte neexistuje rozsah posuvníka; treba presunúť kurzor na začiatok.
+   - **Koliesko nad kódom** posúva kód, kým je kam, inak udalosť `ignore()`-ne a posúva sa zoznam správ.
+   - **Tabuľka má strop výšky ako kód** (`CODE_MAX_HEIGHT`), aby dlhá tabuľka nevytlačila zvyšok odpovede.
+
+   **Chyba, ktorú odhalila až regresia: po dobehnutí odpovede zoznam odskočil dole, aj keď používateľ čítal vyššie.** Prestavba na časti obsah nakrátko zmenší (staré widgety preč, nové ešte nie), rozsah posuvníka spadne na nulu, `_on_value_changed` to vyhodnotí ako „som dole“ a `_on_range_changed` potom pri náraste skočí na koniec. Prejavovalo sa to **občas** – podľa toho, či sa odpoveď dokončila, kým bol zoznam odrolovaný. Opravené dvojako: `_on_value_changed` sa pri `maximum <= 0` neprepisuje (vtedy niet čo posúvať, takže „som dole“ nemá novú informáciu) a `finish_turn` si pred prestavbou zapamätá pozíciu a po nej ju vráti, keď sa zoznam nedrží spodku. Overené deterministicky mimo modelu (`t11_finish_scroll.py`) aj dvoma behmi `t3c`.
+
+   **Pasce v prepise `markdown.py`** (2026-11-06, našiel self-test): `def _close(...)` pri volaní `_closes(...)` → `NameError` pri každom bloku kódu; `table.setFormat(table)` namiesto `frame.setFormat(table)` – formát sa nastavuje tabuľke v dokumente, nie formátu samému sebe, a chýbala k tomu farba rámu (`setBorderBrush`) a `setBorderCollapse`; kozmeticky `rows. append` a `formartter`.
+
+   **Testy** (všetky nad repom na PC 1): `python -m ui.markdown` 24 kontrol; `t8_markdown_ui.py` 20 kontrol nad skutočnými widgetmi (poradie častí, posuvníky, strop, kopírovanie, prepnutie témy, streamovanie → dokončenie, Stop); `t11_finish_scroll.py` (pozícia po dokončení); regresia `t3c` 9/9 dvakrát, `t3b` 19/19, `t9_live_markdown.py` so skutočnou odpoveďou Gemmy – odpoveď sa rozdelila na `_TextView, _CodeBlock, _TextView, _TableBox`, meta `81 tok/s · 3,7 s`.
+
+   **Čo zostáva otvorené:** výber textu myšou cez viac častí nejde (každá časť je vlastný `QTextBrowser`); tabuľka vnorená v odrážke zostane v textovej časti a nedostane rám (`style_tables` sa volá len nad `_TableBox`); podfarbenie hlavičky tabuľky je `chip`, teda jemné – ak bude treba výraznejšie, patrí to do `THEMES`.
+
+   **Ďalej v kroku 9** (stav 2026-11-06, po 6b):
+   - ✅ **6b – markdown hotový** (blok vyššie): text, kód a tabuľky ako samostatné časti odpovede, kopírovanie kódu, obe témy. Necommitnuté.
    - **Kúsok 3b – menu ⋯ pri chate:** tlačidlo ⋯ len pod myšou, `QMenu` Premenovať (inline `QLineEdit`) / Vymazať, zaoblené menu ako menu modelov. Sidebar dostane signály, nie `Database`. **Vymazať chat, do ktorého práve beží odpoveď:** `add_turn` by zlyhal na cudzom kľúči – controller musí ťah pri zmazaní zahodiť (alebo mazanie počas behu zakázať).
-   - Prepínanie témy za behu príde so stránkou Nastavenia (`setStyleSheet` + `apply_theme()`; `SettingsStore.update(theme=…)`).
+   - Prepínanie témy za behu príde so stránkou Nastavenia (`setStyleSheet` + `apply_theme()`; `SettingsStore.update(theme=…)`). Zoznam správ to už zvláda – `MessageList.set_theme()` prerenderuje kód aj tabuľky (6b).
    - Ponúknuté, nerozhodnuté: `sys.excepthook` → fatálny dialóg pri neodchytenej výnimke; generátor ikon do repa (`tools/`).
-   - **Overiť na PC 1:** PyQt6 v `.venv`, ikona na paneli úloh (AppUserModelID + nová `fukai.ico` s bielou dlaždicou; pri starej ikone reštartovať Prieskumníka – cache ikon), sidebar s Fusion, worker s CUDA, zaoblené menu modelov (priehľadné okno na Windows), import modelu (zmazanie `.part` po zrušení, natívny dialóg) a sken `models/`.
+   - ✅ **Overené na PC 1** (2026-11-06, blok vyššie) – štart, ikona, Fusion, worker s CUDA, menu, import, mazanie s mmap aj ukončenie. **Na Windows zostáva neoverené:** chat taký dlhý, že sa začne orezávať história (`dropped`), a správanie pri plnej VRAM. Tmavú tému prešiel živý test 6b (`devdata/settings.json` ju má nastavenú), prepínač za behu ale stále chýba.
 10. [x] **Čítač hlavičky `.gguf`, ktorý nenačíta model** – *robený v kroku 9 ako kúsok 5b (vyššie), hotový a commitnutý 2026-11-05 (`44fc7e6`).* Prerekvizita importu modelu. *Overené 2026-10-30:* `n_layers` aj `n_ctx_train` v `llm_engine.py` idú cez `self._llm._model.model`, teda sú dostupné **až po `load()`**. Popup so zoznamom modelov a rozsahy slidrov ich ale potrebujú **pred** načítaním, preto sa čítajú raz pri importe a cachujú v `models.meta` (§7.1). Pri vytváraní chatu to nevadí – model vtedy už beží.
 11. [ ] Panel nastavení per chat + výber a import modelu
 12. [ ] Prílohy (drag & drop, extrakcia, kontrola tokenov) – prvá migrácia schémy, `SCHEMA_VERSION` na 2
