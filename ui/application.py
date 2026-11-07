@@ -4,6 +4,7 @@ import time
 from PyQt6.QtWidgets import QApplication, QMessageBox
 from PyQt6.QtCore import QTimer
 from PyQt6.QtGui import QIcon
+from core.paths import ensure_dir
 from core.app_settings import load_settings
 from core.constants import APP_NAME, APP_VERSION
 from core.hardware import HardwareProfile, check_cores, check_gpu, check_os, check_ram, detect
@@ -74,8 +75,8 @@ class Application(QApplication):
         self.setStyleSheet(stylesheet(self.settings.current.theme))
         self.chat = ChatController(self.settings, self.hardware, self.database, self.llm)
         self.monitor = UsageMonitor(self.hardware)
-        self.window = MainWindow(self.settings, self.hardware, self.database, self.chat,
-                                 self.library, self.monitor)
+        self.window = MainWindow(self.settings, self.hardware, self.database, self.chat, self.library, self.monitor)
+        self.window.theme_changed.connect(self._set_theme)
         elapsed_ms = int((time.monotonic() - started) * 1000)
         QTimer.singleShot(max(0, SPLASH_TIME - elapsed_ms), lambda: self._show_main(splash))
         return self.exec()
@@ -103,6 +104,7 @@ class Application(QApplication):
         self.database.connect()
         
         self._step(splash, "Kontrolujem modely...")
+        self._ensure_models_dir()
         self.library = ModelLibrary(self.settings, self.database)
         if self.database.created:
             self._forget_last_model()
@@ -110,6 +112,18 @@ class Application(QApplication):
         self.notices.extend(self.library.refresh_meta())
         
         self._step(splash, f"Pripravené · {self.hardware.backend.upper()}")
+
+
+    def _ensure_models_dir(self) -> None:
+        path = self.settings.current.models_dir
+        try:
+            ensure_dir(path)
+        except OSError as exc:
+            raise ConfigError(
+                f"{type(exc).__name__}: {exc} ({path})",
+                message="Priečinok s modelmi sa nepodarilo vytvoriť.",
+                hint="Skontroluj miesto na disku a práva na zápis; cesta je v settings.json."
+            ) from exc
     
     
     def _forget_last_model(self) -> None:
@@ -130,6 +144,11 @@ class Application(QApplication):
         self.window.show()
         splash.finish(self.window)
         QTimer.singleShot(0, self._report_notices)
+
+
+    def _set_theme(self, theme: str) -> None:
+        self.setStyleSheet(stylesheet(theme))
+        self.window.apply_theme(theme)
     
     
     def _report_notices(self) -> None:

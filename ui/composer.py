@@ -9,22 +9,11 @@ from PyQt6.QtGui import QIcon, QKeyEvent, QPalette, QTextOption
 from ui.constants import (
     COMPOSER_BUTTON, COMPOSER_INPUT_MAX_HEIGHT, MODEL_MENU_WIDTH, MODEL_PILL_TEXT_WIDTH, NO_MODEL
 )
-from ui.formatting import size_text
+from ui.formatting import model_subtitle
 from ui.icons import icon
 from ui.style import THEMES, qcolor
 
-__all__ = [
-    "Composer",
-    "model_subtitle"
-]
-
-
-def model_subtitle(model: dict) -> str:
-    if model.get("size_mb") is None:
-        return "súbor chýba"
-    meta = model.get("meta") or {}
-    parts = [meta.get("quant"), meta.get("size_label"), size_text(model["size_mb"])]
-    return " · ".join(p for p in parts if p)
+__all__ = ["Composer"]
 
 
 class _Input(QPlainTextEdit):
@@ -127,15 +116,11 @@ class _ModelRow(QFrame):
     
     
     def hideEvent(self, event) -> None:
-        self._set_hand(False)                   # menu sa zavrelo pod myšou – leave nemusí prísť
+        self._set_hand(False)
         super().hideEvent(event)
     
     
     def _set_hand(self, on: bool) -> None:
-        """Ruka cez override kurzor, nie `setCursor`. Menu je na macOS popup, ktorý nie je
-        kľúčové okno, a cocoa v ňom zmenu kurzora pri pohybe myši neuplatní (overené:
-        `setCursor` v QMenu → šípka, override → ruka). Override je zásobník – preto príznak,
-        aby sa každé nastavenie vrátilo práve raz."""
         if on != self._hand:
             self._hand = on
             if on:
@@ -212,6 +197,8 @@ class Composer(QFrame):
     model_selected = pyqtSignal(int)
     add_model_requested = pyqtSignal()
     delete_model_requested = pyqtSignal(int)
+    attach_requested = pyqtSignal()
+    web_toggled = pyqtSignal(bool)
     
     
     def __init__(self, parent: QWidget | None = None) -> None:
@@ -235,8 +222,10 @@ class Composer(QFrame):
         hint.setObjectName("composerHint")
         
         self._attach = self._round_button("Prílohy")
+        self._attach.clicked.connect(self.attach_requested)
         self._web = self._round_button("Hľadanie na webe")
         self._web.setCheckable(True)
+        self._web.toggled.connect(self.web_toggled)
         
         self._pill = _ModelPill()
         self._pill.clicked.connect(self._open_model_menu)
@@ -276,8 +265,21 @@ class Composer(QFrame):
         button.setObjectName("roundButton")
         button.setFixedSize(COMPOSER_BUTTON, COMPOSER_BUTTON)
         button.setToolTip(tooltip)
-        button.setEnabled(False)
+        button.setCursor(Qt.CursorShape.PointingHandCursor)
         return button
+
+
+    def set_features(self, attachments: bool, web_search: bool) -> None:
+        self._attach.setVisible(attachments)
+        self._web.setVisible(web_search)
+        if not web_search and self._web.isChecked():
+            self._web.setChecked(False)
+
+
+    def set_web(self, on: bool) -> None:
+        blocked = self._web.blockSignals(True)
+        self._web.setChecked(on)
+        self._web.blockSignals(blocked)
     
     
     def set_theme(self, theme: str) -> None:

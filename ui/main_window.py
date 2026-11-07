@@ -3,15 +3,18 @@ from pathlib import Path
 from PyQt6.QtWidgets import (
     QFileDialog, QMessageBox, QMainWindow, QFrame, QLabel, QHBoxLayout, QVBoxLayout, QStackedWidget, QWidget
 )
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QUrl, pyqtSignal
+from PyQt6.QtGui import QDesktopServices
 from core.constants import APP_NAME
 from core.hardware import HardwareProfile
 from core.monitor import UsageMonitor
+from core.paths import ensure_dir
 from core.errors import FukaiError, Notice
 from storage.database import Database
 from ui.chat_controller import ChatController
 from ui.chat_view import ChatView
 from ui.sidebar import Sidebar, PAGE_CHAT
+from ui.settings_view import SettingsView
 from ui.constants import WINDOW_MIN_SIZE, WINDOW_SIZE, PANEL_MARGIN
 from ui.formatting import size_text
 from ui.model_library import ModelLibrary
@@ -22,6 +25,9 @@ __all__ = ["MainWindow"]
 
 
 class MainWindow(QMainWindow):
+    theme_changed = pyqtSignal(str)
+
+
     def __init__(self, settings: SettingsStore, hardware: HardwareProfile, database: Database, controller: ChatController, library: ModelLibrary, monitor: UsageMonitor) -> None:
         super().__init__()
         self._controller = controller
@@ -32,6 +38,8 @@ class MainWindow(QMainWindow):
         self._hardware = hardware
         self._database = database
         self._chats: dict[int, dict] = {}
+
+        current = settings.current
         
         self.setWindowTitle(APP_NAME)
         self.resize(*WINDOW_SIZE)
@@ -39,11 +47,12 @@ class MainWindow(QMainWindow):
         
         self._sidebar = Sidebar()
         self._chat = ChatView(hardware, monitor)
+        self._settings_page = SettingsView()
         
         self._pages = QStackedWidget()
         self._pages.addWidget(self._chat)
         self._pages.addWidget(self._placeholder("Vlastnosti chatu"))
-        self._pages.addWidget(self._placeholder("Nastavenia aplikácie"))
+        self._pages.addWidget(self._settings_page)
         
         panel = QFrame()
         panel.setObjectName("panel")
@@ -95,10 +104,22 @@ class MainWindow(QMainWindow):
         
         composer.add_model_requested.connect(self._on_add_model)
         composer.delete_model_requested.connect(self._on_delete_model)
+        composer.set_features(current.attachments_enabled, current.web_search_enabled)
+        composer.attach_requested.connect(self._on_attach_preview)
+        composer.web_toggled.connect(self._on_web_preview)
         library.import_progress.connect(self._on_import_progress)
         library.import_finished.connect(self._on_import_finished)
         library.import_failed.connect(self._on_import_failed)
         library.import_cancelled.connect(self._on_import_cancelled)
+
+        settings_page = self._settings_page
+        settings_page.theme_changed.connect(self._on_theme_changed)
+        settings_page.attachments_changed.connect(self._on_attachments_changed)
+        settings_page.websearch_changed.connect(self._on_websearch_changed)
+        settings_page.open_folder_requested.connect(self._on_open_folder)
+        settings_page.opened.connect(self._on_settings_opened)
+        settings_page.set_value(current.theme, current.web_search_enabled, current.attachments_enabled)
+        settings_page.set_models_dir(current.models_dir)
         
         self._toast = ToastHost(self)
         self.apply_theme(settings.current.theme)
@@ -117,6 +138,7 @@ class MainWindow(QMainWindow):
     def apply_theme(self, theme: str) -> None:
         self._sidebar.set_theme(theme)
         self._chat.set_theme(theme)
+        self._settings_page.set_theme(theme)
         
     
     def reload_chats(self) -> None:
@@ -235,6 +257,7 @@ class MainWindow(QMainWindow):
         self._close_import_toast()
         self.show_notice(Notice.info("Model je pridaný do knižnice.", hint=title))
         self._select_imported(model_id)
+        self._refresh_found_models()
     
     
     def _on_import_failed(self, error: FukaiError) -> None:
@@ -267,6 +290,7 @@ class MainWindow(QMainWindow):
             return
         self._controller.model_deleted(model_id)
         self.show_notice(Notice.info("Model je zmazaný.", hint=model["title"]))
+        self._refresh_found_models()
     
     
     def _confirm_delete(self, model: dict) -> bool:
@@ -285,3 +309,77 @@ class MainWindow(QMainWindow):
         box.setDefaultButton(cancel)
         box.exec()
         return box.clickedButton() is delete
+
+
+    def _on_theme_changed(self, theme: str) -> None:
+        if theme == self._settings.current.theme:
+            return
+        try:
+            self._settings.update(theme=theme)
+        except FukaiError as exc:
+            self.show_notice(exc.as_notice())
+            self._settings_page.set_value(
+                self._settings.current.theme,
+                self._settings.current.web_search_enabled,
+                self._settings.current.attachments_enabled
+            )
+            return
+        self.theme_changed.emit(theme)
+
+
+    def _on_attachments_changed(self, enabled: bool) -> None:
+        if self._save_settings(attachments_enabled=enabled):
+            self._chat.composer.set_features(enabled, self._settings.current.web_search_enabled)
+
+
+    def _on_websearch_changed(self, enabled: bool) -> None:
+        if self._save_settings(web_search_enabled=enabled):
+            self._chat.composer.set_features(self._settings.current.attachments_enabled, enabled)
+
+
+    def _save_settings(self, **change) -> bool:
+        try:
+            self._settings.update(**change)
+        except FukaiError as exc:
+            self.show_notice(exc.as_notice())
+            return False
+        return True
+
+
+    def _on_settings_opened(self) -> None:
+        for notice in self._library.scan_folder():
+            self.show_notice(notice)
+        self._settings_page.set_models_dir(self._settings.current.models_dir)
+        self._refresh_found_models()
+
+
+    def _refresh_found_models(self) -> None:
+        self._settings_page.set_models(self._library.models())
+
+
+    def _on_open_folder(self) -> None:
+        path = self._settings.current.models_dir
+        try:
+            ensure_dir(path)
+        except OSError as exc:
+            self.show_notice(Notice.warning(
+                "Priečinok s modelmi sa nepodarilo otvoriť.",
+                hint=str(path),
+                detail=f"{type(exc).__name__}: {exc}"
+            ))
+            return
+        if not QDesktopServices.openUrl(QUrl.fromLocalFile(str(path))):
+            self.show_notice(Notice.warning(
+                "Priečinok s modelmi sa nepodarilo otvoriť",
+                hint=str(path)
+            ))
+
+
+    def _on_attach_preview(self) -> None:
+        self.show_notice(Notice.info("Prílohy sa pripravujú.", hint="Pribudnú v kroku 12."))
+
+
+    def _on_web_preview(self, on: bool) -> None:
+        if on:
+            self.show_notice(Notice.info("Vyhľadávanie na webe sa pripravuje.", hint="Pribudne v kroku 13."))
+            self._chat.composer.set_web(False)

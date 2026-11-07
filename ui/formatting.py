@@ -1,12 +1,21 @@
 from __future__ import annotations
 
-__all__ = ["answer_meta", "size_text", "tokens_text"]
+__all__ = ["answer_meta", "model_subtitle", "size_text", "tokens_text"]
 
 
 def size_text(size_mb: float) -> str:
     if size_mb >= 1024:
         return f"{size_mb / 1024:.1f} GB".replace(".", ",")
     return f"{size_mb:.0f} MB"
+
+
+def model_subtitle(model: dict) -> str:
+    """Podnadpis modelu v menu modelov aj v zozname nájdených na karte nastavení."""
+    if model.get("size_mb") is None:
+        return "súbor chýba"
+    meta = model.get("meta") or {}
+    parts = [meta.get("quant"), meta.get("size_label"), size_text(model["size_mb"])]
+    return " · ".join(p for p in parts if p)
 
 
 def answer_meta(data: dict) -> str:

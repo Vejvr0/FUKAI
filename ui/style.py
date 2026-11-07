@@ -1,6 +1,7 @@
 import re
 from string import Template
 from PyQt6.QtGui import QColor
+from ui.constants import CODE_FONT
 
 __all__ = ["THEMES", "qcolor", "stylesheet"]
 
@@ -134,7 +135,7 @@ _QSS = Template("""
         border: 1px solid $panel_border;
         border-radius: 22px;
     }
-    QFrame#chatHeader { background: transparent; border: none; border-bottom: 1px solid $line; }
+    QFrame#chatHeader, QFrame#settingsHeader { background: transparent; border: none; border-bottom: 1px solid $line; }
     QLabel#headTitle  { font-size: 15px; font-weight: 600; }
 
     QFrame#hwChip { background: $chip; border: 1px solid $line; border-radius: 14px; }
@@ -241,6 +242,54 @@ _QSS = Template("""
     QToolButton#modelTrash { border: none; border-radius: 7px; background: transparent; }
     QToolButton#modelTrash:hover { background: $chip_hover; }
     QLabel#modelEmpty { color: $text_muted; padding: 8px 10px; }
+
+    QScrollArea#settingsBody { background: transparent; border: none; }
+    QWidget#settingsWrap     { background: transparent; }
+
+    QLabel#savedNote              { color: $text_muted; font-size: 12px; }
+    QLabel#savedNote[flash="true"] { color: $accent_strong; font-weight: 600; }
+
+    QLabel#groupLabel { color: $text_muted; font-size: 11px; font-weight: 600; }
+
+    QFrame#card {
+        background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 $glass_top, stop:1 $glass_bottom);
+        border: 1px solid $glass_border;
+        border-radius: 18px;
+    }
+    QFrame#sep { background: $line; border: none; min-height: 1px; max-height: 1px; }
+
+    QLabel#setIcon  { background: $chip; border-radius: 12px; }
+    QLabel#setTitle { font-size: 15px; font-weight: 600; }
+    QLabel#setDesc  { color: $text_muted; font-size: 12px; }
+
+    QLineEdit#pathField {
+        background: $chip;
+        border: 1px solid $line;
+        border-radius: 10px;
+        padding: 0 12px;
+        color: $text;
+        font-family: $code_font; font-size: 13px;
+        selection-background-color: $accent; selection-color: #0D1E48;
+    }
+    QPushButton#folderBtn {
+        background: $send; color: $send_text;
+        border: none; border-radius: 10px;
+        padding: 0 16px;
+        font-weight: 600;
+    }
+    QPushButton#folderBtn:hover { background: $send_hover; }
+
+    QLabel#foundHead { color: $text_muted; font-size: 12px; font-weight: 600; }
+    QFrame#foundItem { background: transparent; border-radius: 9px; }
+    QFrame#foundItem:hover { background: $chip; }
+    QLabel#fName { font-size: 13px; }
+    QLabel#fMeta { color: $text_muted; font-size: 12px; }
+    QLabel#foundEmpty {
+        color: $text_muted; font-size: 13px;
+        border: 1px dashed $line; border-radius: 10px;
+        padding: 12px;
+    }
+    QLabel#pageFoot { color: $text_muted; font-size: 11px; }
 """)
 
 _RGBA = re.compile(r"rgba\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*([\d.]+)\s*\)")
@@ -255,4 +304,4 @@ def qcolor(value: str) -> QColor:
 
 
 def stylesheet(theme: str) -> str:
-    return _QSS.substitute(THEMES[theme])
+    return _QSS.substitute(THEMES[theme], code_font=CODE_FONT)

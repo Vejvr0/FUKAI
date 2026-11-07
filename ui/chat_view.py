@@ -30,8 +30,6 @@ def hardware_label(hw: HardwareProfile) -> str:
 
 
 class _HwChip(QFrame):
-    """Čip je prepínač monitora vyťaženia, nie tlačidlo – `QFrame` zostáva, aby sa QSS
-    a rozloženie nemenili, pribúda len klik."""
     clicked = pyqtSignal()
 
 
