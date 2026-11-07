@@ -8,6 +8,7 @@ from core.app_settings import load_settings
 from core.constants import APP_NAME, APP_VERSION
 from core.hardware import HardwareProfile, check_cores, check_gpu, check_os, check_ram, detect
 from core.llm_engine import probe_engine
+from core.monitor import UsageMonitor
 from core.errors import ConfigError, FukaiError, Notice
 from storage.database import Database
 from ui.chat_controller import ChatController
@@ -48,6 +49,7 @@ class Application(QApplication):
         self.llm: LlmService | None = None
         self.chat: ChatController | None = None
         self.library: ModelLibrary | None = None
+        self.monitor: UsageMonitor | None = None
         self.notices: list[Notice] = []
         self.window: MainWindow | None = None
         
@@ -71,7 +73,9 @@ class Application(QApplication):
         self.llm = LlmService()
         self.setStyleSheet(stylesheet(self.settings.current.theme))
         self.chat = ChatController(self.settings, self.hardware, self.database, self.llm)
-        self.window = MainWindow(self.settings, self.hardware, self.database, self.chat, self.library)
+        self.monitor = UsageMonitor(self.hardware)
+        self.window = MainWindow(self.settings, self.hardware, self.database, self.chat,
+                                 self.library, self.monitor)
         elapsed_ms = int((time.monotonic() - started) * 1000)
         QTimer.singleShot(max(0, SPLASH_TIME - elapsed_ms), lambda: self._show_main(splash))
         return self.exec()
@@ -152,7 +156,10 @@ class Application(QApplication):
             self.llm.shutdown()
             self.llm = None
         if self.library is not None:
-            self.library.shutdown()             # zruší import a počká – pred zatvorením databázy
+            self.library.shutdown()
+        if self.monitor is not None:
+            self.monitor.close()
+            self.monitor = None
         if self.database is not None:
             self.database.close()
             self.database = None

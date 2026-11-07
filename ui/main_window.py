@@ -6,6 +6,7 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt
 from core.constants import APP_NAME
 from core.hardware import HardwareProfile
+from core.monitor import UsageMonitor
 from core.errors import FukaiError, Notice
 from storage.database import Database
 from ui.chat_controller import ChatController
@@ -21,8 +22,7 @@ __all__ = ["MainWindow"]
 
 
 class MainWindow(QMainWindow):
-    def __init__(self, settings: SettingsStore, hardware: HardwareProfile, database: Database,
-                 controller: ChatController, library: ModelLibrary) -> None:
+    def __init__(self, settings: SettingsStore, hardware: HardwareProfile, database: Database, controller: ChatController, library: ModelLibrary, monitor: UsageMonitor) -> None:
         super().__init__()
         self._controller = controller
         self._loading_toast: Toast | None = None
@@ -38,7 +38,7 @@ class MainWindow(QMainWindow):
         self.setMinimumSize(*WINDOW_MIN_SIZE)
         
         self._sidebar = Sidebar()
-        self._chat = ChatView(hardware)
+        self._chat = ChatView(hardware, monitor)
         
         self._pages = QStackedWidget()
         self._pages.addWidget(self._chat)

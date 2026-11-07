@@ -1,16 +1,18 @@
 from __future__ import annotations
-from PyQt6.QtCore import Qt, QSize
+from PyQt6.QtCore import Qt, QSize, pyqtSignal
 from PyQt6.QtGui import QIcon
 from PyQt6.QtWidgets import (
     QFrame, QGraphicsDropShadowEffect, QHBoxLayout, QLabel, QSizePolicy, QSpacerItem, QVBoxLayout, QWidget
 )
 from core.hardware import HardwareProfile
+from core.monitor import UsageMonitor
 from ui.constants import (
     COMPOSER_MAX_WIDTH, COMPOSER_SHADOW_ROOM, EMPTY_LIFT, HEADER_HEIGHT, ICO, NEW_CHAT_TITLE,
     WELCOME_LOGO, WELCOME_TEXT
 )
 from ui.composer import Composer
 from ui.message_list import MessageList
+from ui.usage_panel import UsagePanel
 from ui.style import THEMES, qcolor
 
 __all__ = ["ChatView"]
@@ -27,13 +29,34 @@ def hardware_label(hw: HardwareProfile) -> str:
     return f"GPU · {name}{vram}"
 
 
+class _HwChip(QFrame):
+    """Čip je prepínač monitora vyťaženia, nie tlačidlo – `QFrame` zostáva, aby sa QSS
+    a rozloženie nemenili, pribúda len klik."""
+    clicked = pyqtSignal()
+
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+
+
+    def mouseReleaseEvent(self, event) -> None:
+        if event.button() == Qt.MouseButton.LeftButton and self.rect().contains(event.position().toPoint()):
+            self.clicked.emit()
+        super().mouseReleaseEvent(event)
+
+
 class ChatView(QWidget):
-    def __init__(self, hardware: HardwareProfile, parent=None) -> None:
+    def __init__(self, hardware: HardwareProfile, monitor: UsageMonitor, parent=None) -> None:
         super().__init__(parent)
         self._title = QLabel(NEW_CHAT_TITLE)
         self._title.setObjectName("headTitle")
         self._title.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
-        
+
+        self.usage = UsagePanel(monitor)
+        chip = self._hw_chip(hardware)
+        chip.clicked.connect(self.usage.toggle)
+
         header = QFrame()
         header.setObjectName("chatHeader")
         header.setFixedHeight(HEADER_HEIGHT)
@@ -41,8 +64,9 @@ class ChatView(QWidget):
         row.setContentsMargins(20, 0, 20, 0)
         row.setSpacing(12)
         row.addWidget(self._title, 1)
-        row.addWidget(self._hw_chip(hardware))
-        
+        row.addWidget(self.usage)
+        row.addWidget(chip)
+
         self.messages = MessageList()
         self._welcome = self._welcome_block()
         self._top = QSpacerItem(0, 0)
@@ -145,18 +169,18 @@ class ChatView(QWidget):
     
     
     @staticmethod
-    def _hw_chip(hardware: HardwareProfile) -> QFrame:
+    def _hw_chip(hardware: HardwareProfile) -> _HwChip:
         dot = QLabel()
         dot.setObjectName("hwDot")
         dot.setProperty("backend", hardware.backend)
         dot.setFixedSize(8, 8)
         text = QLabel(hardware_label(hardware))
         text.setObjectName("hwText")
-        
-        chip = QFrame()
+
+        chip = _HwChip()
         chip.setObjectName("hwChip")
         chip.setFixedHeight(28)
-        tip = "Detegovaný hardvér"
+        tip = "Detegovaný hardvér\nKliknutím zapneš a vypneš monitor vyťaženia."
         if hardware.gpu is not None and not hardware.gpu_offload:
             tip += f"\n{hardware.gpu.name} sa nepoužíva - engine je len pre CPU."
         chip.setToolTip(tip)

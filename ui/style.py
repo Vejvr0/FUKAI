@@ -138,6 +138,9 @@ _QSS = Template("""
     QLabel#headTitle  { font-size: 15px; font-weight: 600; }
 
     QFrame#hwChip { background: $chip; border: 1px solid $line; border-radius: 14px; }
+    QFrame#hwChip:hover { background: $chip_hover; }
+    QFrame#usagePanel { background: $chip; border: 1px solid $line; border-radius: 12px; }
+    QLabel#usageText { color: $text_muted; font-size: 11px; }
     QLabel#hwText { color: $text_muted; font-size: 12px; }
     QLabel#hwDot  { background: $ok; border-radius: 4px; }
     QLabel#hwDot[backend="cpu"] { background: $warning; }
