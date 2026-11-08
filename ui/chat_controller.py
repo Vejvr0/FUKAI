@@ -54,6 +54,7 @@ class ChatController(QObject):
         self._model_id: int | None = settings.current.last_model_id
         self._turn: _Turn | None = None
         self._loaded: LoadParams | None = None
+        self._draft: ChatProperties | None = None
         
         llm.loaded.connect(self._on_loaded)
         llm.load_failed.connect(self._on_load_failed)
@@ -79,9 +80,6 @@ class ChatController(QObject):
 
     @property
     def turn_chat_id(self) -> int | None:
-        """Chat, do ktorého práve beží ťah – `busy` + `chat_id` nestačia, odpoveď môže
-        dobiehať do iného chatu, než je zobrazený. `None` aj pri ťahu v chate, ktorý ešte
-        nevznikol (§7.1 – chat vzniká s prvou dokončenou odpoveďou)."""
         return self._turn.chat_id if self._turn is not None else None
     
     
@@ -92,6 +90,8 @@ class ChatController(QObject):
     
     
     def new_chat(self) -> None:
+        if self._chat_id is not None:
+            self._draft = None
         self._view += 1
         self._chat_id = None
         self._model_id = self._settings.current.last_model_id
@@ -130,6 +130,7 @@ class ChatController(QObject):
         try:
             if self._chat_id is not None:
                 self._database.set_model(self._chat_id, model_id, self._defaults(model).to_dict())
+            self._draft = None
             self._model_id = model_id
             self._settings.update(last_model_id=model_id)
         except FukaiError as exc:
@@ -154,9 +155,30 @@ class ChatController(QObject):
                 self.notice.emit(exc.as_notice())
         if self._model_id == model_id:
             self._model_id = None
+            self._draft = None
             self._emit_model()
             
     
+    def properties(self) -> ChatProperties | None:
+        model = self._database.get_model(self._model_id) if self._model_id is not None else None
+        if model is None:
+            return None
+        if self._chat_id is None:
+            if self._draft is None:
+                self._draft = self._defaults(model)
+            return self._draft
+        return ChatProperties.from_dict(
+            self._database.get_properties(self._chat_id) or {}, self._model_path(model)
+        )
+
+
+    def apply_properties(self, props: ChatProperties) -> None:
+        if self._chat_id is None:
+            self._draft = props
+            return
+        self._database.set_properties(self._chat_id, props.to_dict())
+
+
     def send(self, text: str) -> None:
         if self.busy:
             raise RuntimeError("ChatController je zaneprázdnený - počkaj na busy_changed(False)")
@@ -173,7 +195,7 @@ class ChatController(QObject):
 
         try:
             if self._chat_id is None:
-                props = self._defaults(model)
+                props = self._draft or self._defaults(model)
                 history: list[HistoryItem] = []
             else:
                 props = ChatProperties.from_dict(self._database.get_properties(self._chat_id) or {}, self._model_path(model))

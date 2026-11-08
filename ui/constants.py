@@ -35,6 +35,7 @@ CHAT_ROW_BUTTON = 24
 CHAT_MENU_WIDTH = 210
 PANEL_MARGIN = 12
 HEADER_HEIGHT = 56
+FOOTER_HEIGHT = 56
 USAGE_INTERVAL_MS = 1000
 USAGE_WIDEST = "VRAM: 100 %"
 TOAST_WIDTH = 320
@@ -72,7 +73,7 @@ COPY_LABEL = "Kopírovať"
 COPY_DONE_LABEL = "Skopírované"
 COPY_RESET_MS = 1500
 SETTINGS_TITLE = "Nastavenia aplikácie"
-SETTINGS_MAX_WIDTH = 720
+PAGE_MAX_WIDTH = 720
 SETTINGS_SAVED_TEXT = "Zmeny sa ukladajú automaticky"
 SETTINGS_SAVED_FLASH = "✓ Uložené"
 SETTINGS_SAVED_MS = 1500
@@ -86,3 +87,46 @@ SWITCH_ANIM_MS = 150
 PATH_ROW_HEIGHT = 38
 FOUND_ITEM_HEIGHT = 36
 OPEN_FOLDER_LABEL = "Otvoriť priečinok"
+PROPERTIES_TITLE = "Vlastnosti chatu"
+PROPERTIES_SAVED_TEXT = "Všetko je použité"
+PROPERTIES_SAVED_FLASH = "✓ Použité"
+PROPERTIES_SAVED_MS = 2500
+PROPERTIES_RELOAD_NOTE = "model sa načíta pri ďalšej správe"
+PROPERTIES_APPLY_LABEL = "Použiť"
+PROPERTIES_RESET_LABEL = "Predvolené"
+PROPERTIES_NO_MODEL = "Bez modelu"
+PROPERTIES_NO_MODEL_HINT = "Najprv vyber model v riadku na písanie."
+PROPERTIES_DIRTY = "Neuložené zmeny"
+SCOPE_CHARS = 26
+EXPERT_LABEL = "Expertný režim"
+BADGE_RELOAD = "⟳ vyžaduje znovu načítať model"
+BADGE_LIVE = "platí hneď"
+CARD_MARGINS = (20, 16, 20, 16)
+NUM_WIDTH = 96
+SEED_NUM_WIDTH = 128
+PARAM_MIN_WIDTH = 320
+PARAM_GRID_SPACING = (32, 4)
+PARAM_MARGINS = (0, 12, 0, 12)
+LAYERS_UNKNOWN_MAX = 99
+SEED_FALLBACK = 42
+RANDOM_LABEL = "Náhodný"
+RANDOM_PLACEHOLDER = "náhodný"
+EASY_HINT = ("Chceš jemnejšie ladenie (teplota, top-p, vrstvy na GPU)? "
+             "Zapni Expertný režim vpravo hore.")
+NUM_HEIGHT = 30
+SLIDER_HANDLE = 16
+TICK_SPACING = 8
+BIG_CONTEXT = 32768
+TOKENS_PER_PAGE = 600
+PROMPT_BOX_HEIGHT = 104
+PRESET_HEIGHT = 28
+PROMPT_EMPTY_HINT = "prázdny · model použije svoj predvolený"
+PROMPT_PRESETS = {
+    "Všeobecný asistent": "Si FUKAI, nápomocný AI asistent. Odpovedaj po slovensky, vecne a zrozumiteľne. "
+                          "Ak si niečím nie si istý, povedz to.",
+    "Tútor pre študentov": "Si trpezlivý vysokoškolský tútor. Vysvetľuj postupne, s príkladmi, a na konci over "
+                           "porozumenie krátkou otázkou. Odpovedaj po slovensky.",
+    "Programátor": "Si skúsený programátor. Odpovedaj stručne, kód píš v blokoch s označením jazyka a vysvetli "
+                   "len to podstatné.",
+    "Stručné odpovede": "Odpovedaj čo najstručnejšie, najviac v 2-3 vetách, po slovensky.",
+}

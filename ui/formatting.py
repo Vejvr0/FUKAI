@@ -1,6 +1,7 @@
 from __future__ import annotations
+from ui.constants import TOKENS_PER_PAGE
 
-__all__ = ["answer_meta", "model_subtitle", "size_text", "tokens_text"]
+__all__ = ["answer_meta", "int_text", "model_subtitle", "pages_text", "short_tokens", "size_text", "tokens_text"]
 
 
 def size_text(size_mb: float) -> str:
@@ -10,7 +11,6 @@ def size_text(size_mb: float) -> str:
 
 
 def model_subtitle(model: dict) -> str:
-    """Podnadpis modelu v menu modelov aj v zozname nájdených na karte nastavení."""
     if model.get("size_mb") is None:
         return "súbor chýba"
     meta = model.get("meta") or {}
@@ -35,3 +35,17 @@ def tokens_text(count: int) -> str:
         return "tokeny sa dopočítajú"
     word = "token" if count == 1 else "tokeny" if count < 5 else "tokenov"
     return f"~{count:,} {word}".replace(",", " ")
+
+
+def int_text(value: int) -> str:
+    return f"{value:,}".replace(",", " ")
+
+
+def short_tokens(value: int) -> str:
+    return f"{value // 1024}K" if value >= 1024 and value % 1024 == 0 else str(value)
+
+
+def pages_text(n_ctx: int) -> str:
+    pages = max(1, round(n_ctx / TOKENS_PER_PAGE))
+    word = "strana" if pages == 1 else "strany" if pages < 5 else "strán"
+    return f"{int_text(pages)} {word}"

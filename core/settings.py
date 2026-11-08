@@ -178,6 +178,13 @@ class ModelMeta:
         return cls(**_known(cls, data))
 
 
+    def kv_cache_mb(self, n_ctx: int) -> int | None:
+        if not (self.n_layers and self.n_head_kv and self.head_dim_k and self.head_dim_v):
+            return None
+        heads = self.n_head_kv * (self.head_dim_k + self.head_dim_v)
+        return n_ctx * self.n_layers * heads * 2 // (1024 * 1024)
+
+
 @dataclass(frozen=True)
 class ChatProperties:
     load: LoadParams

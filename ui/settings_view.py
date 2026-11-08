@@ -6,7 +6,7 @@ from PyQt6.QtWidgets import (
     QLineEdit, QPushButton
 )
 from ui.constants import (
-    HEADER_HEIGHT, SETTINGS_FOOT, SETTINGS_MAX_WIDTH, SETTINGS_SAVED_FLASH, SETTINGS_SAVED_MS,
+    HEADER_HEIGHT, SETTINGS_FOOT, PAGE_MAX_WIDTH, SETTINGS_SAVED_FLASH, SETTINGS_SAVED_MS,
     SETTINGS_SAVED_TEXT, SETTINGS_TITLE, SET_ICON_BOX, SET_ICON_SIZE, FOUND_ITEM_HEIGHT, ICON_GAP,
     OPEN_FOLDER_LABEL, PATH_ROW_HEIGHT
 )
@@ -105,7 +105,7 @@ class SettingsView(QWidget):
 
         wrap = QWidget()
         wrap.setObjectName("settingsWrap")
-        wrap.setMaximumWidth(SETTINGS_MAX_WIDTH)
+        wrap.setMaximumWidth(PAGE_MAX_WIDTH)
         self._wrap = QVBoxLayout(wrap)
         self._wrap.setContentsMargins(0, 0, 0, 0)
         self._wrap.setSpacing(0)

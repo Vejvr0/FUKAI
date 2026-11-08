@@ -31,6 +31,7 @@ THEMES: dict[str, dict[str, str]] = {
         "code_scroll": "rgba(205, 239, 251, 0.30)",
         "menu": "#F5FBFE", "shadow": "rgba(13, 30, 72, 0.20)",
         "ok": "#2ECC71", "warning": "#E0A100", "danger": "#C62828",
+        "warn_bg": "rgba(240, 160, 40, 0.18)", "warn_text": "#8A5300",
     },
     "dark": {
         "window": "#0D1E48",
@@ -57,6 +58,7 @@ THEMES: dict[str, dict[str, str]] = {
         "code_scroll": "rgba(189, 232, 247, 0.26)",
         "menu": "#1F3760", "shadow": "rgba(0, 0, 0, 0.40)",
         "ok": "#2ECC71", "warning": "#F0B429", "danger": "#FF8A80",
+        "warn_bg": "rgba(247, 201, 126, 0.14)", "warn_text": "#F7C97E",
     },
 }
 
@@ -135,7 +137,8 @@ _QSS = Template("""
         border: 1px solid $panel_border;
         border-radius: 22px;
     }
-    QFrame#chatHeader, QFrame#settingsHeader { background: transparent; border: none; border-bottom: 1px solid $line; }
+    QFrame#chatHeader, QFrame#settingsHeader, QFrame#propertiesHeader { background: transparent; border: none; border-bottom: 1px solid $line; }
+    QFrame#propertiesFooter { background: transparent; border: none; border-top: 1px solid $line; }
     QLabel#headTitle  { font-size: 15px; font-weight: 600; }
 
     QFrame#hwChip { background: $chip; border: 1px solid $line; border-radius: 14px; }
@@ -290,6 +293,106 @@ _QSS = Template("""
         padding: 12px;
     }
     QLabel#pageFoot { color: $text_muted; font-size: 11px; }
+
+    QScrollArea#propertiesBody { background: transparent; border: none; }
+    QFrame#scopeChip { background: $chip; border: 1px solid $line; border-radius: 14px; }
+    QLabel#scopeText { color: $text_muted; font-size: 12px; }
+    QLabel#modeLabel { font-size: 13px; font-weight: 600; }
+
+    QLabel#badge { border-radius: 10px; padding: 2px 8px; font-size: 11px; font-weight: 600; }
+    QLabel#badge[kind="reload"] { background: $warn_bg; color: $warn_text; }
+    QLabel#badge[kind="live"]   { background: $chip; color: $accent_strong; }
+
+    QLabel#pLabel { font-size: 15px; font-weight: 600; }
+    QLabel#pKey {
+        background: $chip; border-radius: 6px; padding: 1px 6px;
+        color: $text_muted; font-family: $code_font; font-size: 11px;
+    }
+    QLabel#pHint { color: $text_muted; font-size: 12px; }
+    QLabel#pDesc { color: $text_muted; font-size: 12px; }
+    QLabel#pTag  { color: $accent_strong; font-size: 12px; font-weight: 600; }
+    QLabel#pNote {
+        background: $warn_bg; color: $warn_text;
+        border-radius: 10px; padding: 8px 12px; font-size: 12px;
+    }
+
+    QPlainTextEdit#promptBox {
+        background: $chip;
+        border: 1px solid $line;
+        border-radius: 12px;
+        padding: 8px 10px;
+        color: $text; font-size: 14px;
+        selection-background-color: $accent; selection-color: #0D1E48;
+    }
+    QPlainTextEdit#promptBox:focus { border-color: $accent; }
+    QPushButton#preset {
+        background: $glass; border: 1px solid $glass_border; border-radius: 14px;
+        padding: 0 12px; font-size: 12px; color: $text;
+    }
+    QPushButton#preset:hover { background: $chip_hover; }
+
+    QLabel#applyStatus { color: $text_muted; font-size: 12px; }
+    QLabel#applyStatus[state="dirty"] { color: $warn_text; font-weight: 600; }
+    QLabel#applyStatus[state="ok"]    { color: $accent_strong; font-weight: 600; }
+    QPushButton#ghostBtn {
+        background: $chip; border: none; border-radius: 10px;
+        padding: 0 16px; font-weight: 600; color: $text;
+    }
+    QPushButton#ghostBtn:hover { background: $chip_hover; }
+    QPushButton#applyBtn {
+        background: $send; color: $send_text; border: none; border-radius: 10px;
+        padding: 0 16px; font-weight: 600;
+    }
+    QPushButton#applyBtn:hover { background: $send_hover; }
+    QPushButton#applyBtn:disabled { background: $chip; color: $text_muted; }
+
+    QSpinBox#num, QDoubleSpinBox#num {
+        background: $chip;
+        border: 1px solid $line;
+        border-radius: 8px;
+        padding: 0 8px;
+        color: $text;
+        font-family: $code_font; font-size: 12px;
+        selection-background-color: $accent; selection-color: #0D1E48;
+    }
+    QSpinBox#num:focus, QDoubleSpinBox#num:focus { border-color: $accent; }
+    QSpinBox#num:disabled, QDoubleSpinBox#num:disabled { color: $text_muted; }
+
+    QSlider::groove:horizontal { height: 6px; background: $chip_hover; border-radius: 3px; }
+    QSlider::sub-page:horizontal { background: $accent; border-radius: 3px; }
+    QSlider::add-page:horizontal { background: $chip_hover; border-radius: 3px; }
+    QSlider::handle:horizontal {
+        width: 12px; height: 12px;
+        margin: -5px 0;
+        border-radius: 8px;
+        background: #FFFFFF;
+        border: 2px solid $accent_strong;
+    }
+    QSlider::handle:horizontal:disabled { border-color: $text_muted; }
+
+    QLabel#tick { color: $text_muted; font-family: $code_font; font-size: 11px; }
+    QLabel#tick[on="true"] { color: $accent_strong; font-weight: 700; }
+    QLabel#pMemory { color: $text_muted; font-size: 12px; }
+    QLabel#pMin, QLabel#pMax {
+        color: $text_muted; font-family: $code_font; font-size: 11px; min-width: 34px;
+    }
+    QLabel#miniLabel { color: $text_muted; font-size: 12px; }
+    QLineEdit#num {
+        background: $chip;
+        border: 1px solid $line;
+        border-radius: 8px;
+        padding: 0 8px;
+        color: $text;
+        font-family: $code_font; font-size: 12px;
+        selection-background-color: $accent; selection-color: #0D1E48;
+    }
+    QLineEdit#num:focus { border-color: $accent; }
+    QLineEdit#num:disabled { color: $text_muted; }
+    QLabel#easyHint {
+        color: $text_muted; font-size: 13px;
+        border: 1px dashed $line; border-radius: 14px;
+        padding: 12px 16px;
+    }
 """)
 
 _RGBA = re.compile(r"rgba\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*([\d.]+)\s*\)")

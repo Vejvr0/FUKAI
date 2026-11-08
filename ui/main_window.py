@@ -1,9 +1,9 @@
 from __future__ import annotations
 from pathlib import Path
 from PyQt6.QtWidgets import (
-    QFileDialog, QMessageBox, QMainWindow, QFrame, QLabel, QHBoxLayout, QVBoxLayout, QStackedWidget, QWidget
+    QFileDialog, QMessageBox, QMainWindow, QFrame, QHBoxLayout, QVBoxLayout, QStackedWidget, QWidget
 )
-from PyQt6.QtCore import Qt, QUrl, pyqtSignal
+from PyQt6.QtCore import QUrl, pyqtSignal
 from PyQt6.QtGui import QDesktopServices
 from core.constants import APP_NAME
 from core.hardware import HardwareProfile
@@ -14,6 +14,7 @@ from storage.database import Database
 from ui.chat_controller import ChatController
 from ui.chat_view import ChatView
 from ui.sidebar import Sidebar, PAGE_CHAT
+from ui.properties_view import PropertiesView
 from ui.settings_view import SettingsView
 from ui.constants import WINDOW_MIN_SIZE, WINDOW_SIZE, PANEL_MARGIN
 from ui.formatting import size_text
@@ -47,11 +48,12 @@ class MainWindow(QMainWindow):
         
         self._sidebar = Sidebar()
         self._chat = ChatView(hardware, monitor)
+        self._properties_page = PropertiesView(hardware)
         self._settings_page = SettingsView()
         
         self._pages = QStackedWidget()
         self._pages.addWidget(self._chat)
-        self._pages.addWidget(self._placeholder("Vlastnosti chatu"))
+        self._pages.addWidget(self._properties_page)
         self._pages.addWidget(self._settings_page)
         
         panel = QFrame()
@@ -112,6 +114,12 @@ class MainWindow(QMainWindow):
         library.import_failed.connect(self._on_import_failed)
         library.import_cancelled.connect(self._on_import_cancelled)
 
+        properties_page = self._properties_page
+        properties_page.opened.connect(self._on_properties_opened)
+        properties_page.apply_requested.connect(self._on_apply_properties)
+        controller.busy_changed.connect(properties_page.set_busy)
+        controller.model_changed.connect(self._on_model_for_properties)
+
         settings_page = self._settings_page
         settings_page.theme_changed.connect(self._on_theme_changed)
         settings_page.attachments_changed.connect(self._on_attachments_changed)
@@ -127,17 +135,10 @@ class MainWindow(QMainWindow):
         controller.new_chat()
         
 
-    @staticmethod
-    def _placeholder(text: str) -> QLabel:
-        label = QLabel(text)
-        label.setObjectName("placeholder")
-        label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        return label
-    
-    
     def apply_theme(self, theme: str) -> None:
         self._sidebar.set_theme(theme)
         self._chat.set_theme(theme)
+        self._properties_page.set_theme(theme)
         self._settings_page.set_theme(theme)
         
     
@@ -344,6 +345,42 @@ class MainWindow(QMainWindow):
             self.show_notice(exc.as_notice())
             return False
         return True
+
+
+    def _on_properties_opened(self) -> None:
+        self._refresh_properties()
+
+
+    def _on_model_for_properties(self, _model: dict | None) -> None:
+        if not self._properties_page.isHidden():
+            self._refresh_properties()
+
+
+    def _refresh_properties(self) -> None:
+        chat_id = self._controller.chat_id
+        try:
+            props = self._controller.properties()
+            chat = self._database.get_chat(chat_id) if chat_id is not None else None
+        except FukaiError as exc:
+            self.show_notice(exc.as_notice())
+            props, chat = None, None
+        model_id = self._controller.model_id
+        model = next((m for m in self._library.models() if m["id"] == model_id), None)
+        self._properties_page.load(
+            props,
+            chat_title=chat["title"] if chat is not None else None,
+            model=model,
+        )
+
+
+    def _on_apply_properties(self, props) -> None:
+        try:
+            self._controller.apply_properties(props)
+        except FukaiError as exc:
+            self.show_notice(exc.as_notice())
+            self._refresh_properties()
+            return
+        self._properties_page.confirm_applied()
 
 
     def _on_settings_opened(self) -> None:

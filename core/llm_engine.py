@@ -17,6 +17,7 @@ from core.errors import (
 )
 
 __all__ = [
+    "memory_pool",
     "LlmEngine",
     "FinishReason",
     "EngineInfo",
@@ -40,7 +41,7 @@ def _import_llama() -> ModuleType:
     return llama_cpp
 
 
-def _memory_pool(params: LoadParams, gpu_offload: bool) -> tuple[int, str]:
+def memory_pool(params: LoadParams, gpu_offload: bool) -> tuple[int, str]:
     ram = free_ram_mb()
     if params.n_gpu_layers == 0 or not gpu_offload:
         return ram, "operačnej pamäte"
@@ -99,7 +100,7 @@ class LlmEngine:
             self._unload_locked()
             notices: list[Notice] = []
             need_mb = int(params.model_size_mb * MEMORY_MARGIN)
-            free_mb, where = _memory_pool(params, llama.llama_supports_gpu_offload())
+            free_mb, where = memory_pool(params, llama.llama_supports_gpu_offload())
             if need_mb > free_mb:
                 notices.append(Notice.warning(
                     f"Model potrebuje približne {need_mb / 1024:.1f} GB {where}, "
