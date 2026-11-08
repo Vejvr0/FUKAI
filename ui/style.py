@@ -316,6 +316,13 @@ _QSS = Template("""
         border-radius: 10px; padding: 8px 12px; font-size: 12px;
     }
 
+    QFrame#infoCard { background: $menu; border: 1px solid $glass_border; border-radius: 16px; }
+    QLabel#infoTitle { font-size: 15px; font-weight: 600; }
+    QLabel#infoKey   { color: $text_muted; font-size: 12px; }
+    QLabel#infoValue { font-size: 13px; }
+    QPushButton#infoClose { border: none; background: transparent; color: $text_muted; font-size: 13px; }
+    QPushButton#infoClose:hover { color: $text; }
+
     QPlainTextEdit#promptBox {
         background: $chip;
         border: 1px solid $line;

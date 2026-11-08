@@ -7,6 +7,7 @@ from PyQt6.QtCore import QUrl, pyqtSignal
 from PyQt6.QtGui import QDesktopServices
 from core.constants import APP_NAME
 from core.hardware import HardwareProfile
+from core.gguf import read_meta
 from core.monitor import UsageMonitor
 from core.paths import ensure_dir
 from core.errors import FukaiError, Notice
@@ -20,6 +21,7 @@ from ui.constants import WINDOW_MIN_SIZE, WINDOW_SIZE, PANEL_MARGIN
 from ui.formatting import size_text
 from ui.model_library import ModelLibrary
 from ui.settings_store import SettingsStore
+from ui.model_info import ModelInfoDialog
 from ui.toast import Toast, ToastHost
 
 __all__ = ["MainWindow"]
@@ -50,6 +52,7 @@ class MainWindow(QMainWindow):
         self._chat = ChatView(hardware, monitor)
         self._properties_page = PropertiesView(hardware)
         self._settings_page = SettingsView()
+        self._settings_page.model_info_requested.connect(self._on_model_info)
         
         self._pages = QStackedWidget()
         self._pages.addWidget(self._chat)
@@ -345,6 +348,15 @@ class MainWindow(QMainWindow):
             self.show_notice(exc.as_notice())
             return False
         return True
+
+
+    def _on_model_info(self, model: dict) -> None:
+        try:
+            meta = read_meta(self._library.model_path(model))
+        except FukaiError as exc:
+            self.show_notice(exc.as_notice())
+            return
+        ModelInfoDialog(model, meta, self._settings.current.theme, self).exec()
 
 
     def _on_properties_opened(self) -> None:

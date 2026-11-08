@@ -19,12 +19,16 @@ __all__ = ["SettingsView"]
 
 
 class _FoundRow(QFrame):
+    clicked = pyqtSignal(object)
+
+
     def __init__(self, model: dict, cube: QIcon, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setObjectName("foundItem")
         self.setFixedHeight(FOUND_ITEM_HEIGHT)
-        self.setToolTip(model["path"])
-        self._title = model["title"]
+        self._model = model
+        self.setToolTip(self._model["path"])
+        self._title = self._model["title"]
 
         badge = QLabel()
         badge.setFixedSize(16, 16)
@@ -33,8 +37,10 @@ class _FoundRow(QFrame):
         self._name = QLabel()
         self._name.setObjectName("fName")
         self._name.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        self._name.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._name.installEventFilter(self)
 
-        meta = QLabel(model_subtitle(model))
+        meta = QLabel(model_subtitle(self._model))
         meta.setObjectName("fMeta")
 
         row = QHBoxLayout(self)
@@ -57,6 +63,18 @@ class _FoundRow(QFrame):
             self._apply_title()
 
 
+    def eventFilter(self, obj, event):
+        if obj == self._name and event.type() == QEvent.Type.MouseButtonPress:
+            if event.button() == Qt.MouseButton.LeftButton:
+                self._on_model_clicked()
+                return True
+        return super().eventFilter(obj, event)
+
+
+    def _on_model_clicked(self) -> None:
+        self.clicked.emit(self._model)
+
+
     def _apply_title(self) -> None:
         metrics = self._name.fontMetrics()
         self._name.setText(metrics.elidedText(self._title, Qt.TextElideMode.ElideRight, max(0, self._name.width())))
@@ -68,6 +86,7 @@ class SettingsView(QWidget):
     websearch_changed = pyqtSignal(bool)
     open_folder_requested = pyqtSignal()
     opened = pyqtSignal()
+    model_info_requested = pyqtSignal(object)
 
 
     def __init__(self, parent: QWidget | None = None) -> None:
@@ -316,4 +335,6 @@ class SettingsView(QWidget):
             return
         cube = icon("cube", THEMES[self._theme]["accent_strong"], 16)
         for model in models:
-            self._found.addWidget(_FoundRow(model, cube))
+            row = _FoundRow(model, cube)
+            row.clicked.connect(self.model_info_requested)
+            self._found.addWidget(row)

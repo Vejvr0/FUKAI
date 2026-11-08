@@ -680,13 +680,25 @@ Testy: `python -m ui.markdown` 24 kontrol, `t8_markdown_ui.py` 20, `t11_finish_s
 
 `t1_props.py` 46 kontrol, `t4_ctx.py` 40, `t5_params.py` 55 (offscreen), `t7_live.py` 17 v skutočnej appke na platforme `windows` so snímkami oboch tém a minimálneho okna. Živý test dokázal celú cestu: nastavené `n_ctx=512` a `max_tokens=16` sa prejavili až v engine (`engine.n_ctx == 512`, odpoveď skončila na `length` po 16 tokenoch). Regresia: self-testy `core.settings`, `core.gguf`, `core.context`, `ui.markdown`.
 
+### Modal s informáciami o modeli (popoludní)
+
+Malá featurka do stránky Nastavenia: klik na názov modelu v zozname nájdených otvorí modal s údajmi z hlavičky `.gguf` (10 riadkov – architektúra, parametre, kvantizácia, kontext, vrstvy, KV cache na 1 024 tokenov, chat template, veľkosť). Rozhodnutie a event filter autor, modal navrhol a otestoval Claude v scratchpade, autor prepísal bez chýb. Podrobnosti v ALMANAC §8 krok 9 („Kúsok 10“).
+
+Hlavička sa číta nanovo zo súboru, nie z `models.meta` – 60 ms v UI vlákne je prijateľných a modal tak ukazuje, čo je naozaj v súbore. Dialóg dostane hotové dáta, takže `info_rows()` sa dá testovať ako obyčajná funkcia.
+
+| Zistenie | Prečo bolo zradné |
+|---|---|
+| klik poslaný cez `widget.event()` | event filter ho nevidí – v testoch posielať cez `QApplication.sendEvent` (doplnok k pasci z kúska 3b) |
+| `exec()` modalu blokuje | zatvorenie treba naplánovať časovačom **pred** kliknutím, inak test visí |
+| frameless dialóg | nemá systémové ✕ ani spoľahlivé centrovanie – oboje si musí widget spraviť sám (`showEvent`) |
+
 ### Údržba ALMANAC-u a SESSIONS
 
 Krok 9 dostal na začiatku **index kúskov** (tabuľka 14 riadkov so stavom a commitmi), pribudla **§8.2 s opakujúcimi sa pascami** Qt a Pythonu, zastaraná matica wheelov v §3.1 a spracované poznatky z notebooku sa skrátili. Zoznamy preklepov z prepisu a matica testu z PC 1 sa presunuli sem do príloh – ALMANAC sa načítava do kontextu pri každom spustení, denník nie.
 
 ### Nedoriešené do ďalšej session
 
-1. **Commit denníka** – kód je commitnutý (`79fc572`, k tomu autorova úprava vzhľadu `cdfe7cd`), ALMANAC a SESSIONS zostali v strome.
+1. **Commit** modalu s informáciami o modeli (`ui/model_info.py`, `ui/settings_view.py`, `ui/main_window.py`, `ui/style.py`, `ui/constants.py`) a denníka. Stránka Vlastnosti je commitnutá (`79fc572` + `cdfe7cd`), ALMANAC refactor tiež (`10479c5`).
 2. **Krok 12 – prílohy**: prvá migrácia schémy (`SCHEMA_VERSION` na 2), tabuľka `attachments`, extrakcia textu z pdf/xlsx/docx, kontrola tokenov proti kontextu.
 3. Toast sa prekrýva s prvou kartou na stránkach Vlastnosti aj Nastavenia (`TOAST_TOP`).
 4. Počet tokenov systémového promptu je odhad `dĺžka / 4`, nie `llm.tokenize()`.
