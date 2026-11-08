@@ -589,6 +589,7 @@ class PropertiesView(QWidget):
         self._scope.set_full_text(PROPERTIES_NO_MODEL)
         chip = QFrame()
         chip.setObjectName("scopeChip")
+        chip.setMaximumHeight (28)
         chip_row = QHBoxLayout(chip)
         chip_row.setContentsMargins(10, 4, 10, 4)
         chip_row.addWidget(self._scope)

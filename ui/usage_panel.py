@@ -20,7 +20,7 @@ class UsagePanel(QFrame):
 
         self._rows = []
         column = QVBoxLayout(self)
-        column.setContentsMargins(10, 2, 10, 2)
+        column.setContentsMargins(8, 0, 8, 0)
         column.setSpacing(0)
         for _ in range(3):
             label = QLabel()
