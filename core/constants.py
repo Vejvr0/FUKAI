@@ -62,3 +62,19 @@ META_VALUE_LENGTH = "attention.value_length"
 ARCH_PROJECTOR = "clip"
 IMPORT_CHUNK_BYTES = 8 * 1024 * 1024
 IMPORT_FREE_MARGIN_MB = 1024
+ATTACHMENT_MAX_MB = 20
+ATTACHMENT_MAX_ROWS = 500
+TEXT_SUFFIXES = frozenset({
+    ".txt", ".md", ".markdown", ".csv", ".tsv", ".json", ".jsonl", ".xml", ".yaml", ".yml",
+    ".toml", ".ini", ".cfg", ".log", ".sql", ".py", ".pyw", ".js", ".ts", ".jsx", ".tsx",
+    ".html", ".htm", ".css", ".c", ".h", ".cpp", ".hpp", ".cs", ".java", ".go", ".rs",
+    ".rb", ".php", ".sh", ".bat", ".ps1", ".r", ".m", ".swift", ".kt", ".lua", ".pl",
+})
+PDF_SUFFIX = ".pdf"
+XLSX_SUFFIX = ".xlsx"
+DOCX_SUFFIX = ".docx"
+TEXT_ENCODINGS = ("utf-8-sig", "cp1250")
+BINARY_PROBE_BYTES = 8192
+ATTACHMENT_OPEN = "--- Príloha: {title} ---"
+ATTACHMENT_CLOSE = "--- koniec prílohy ---"
+ATTACHMENT_CUT_NOTE = "\n\n[Príloha bola orezaná, do kontextu sa zvyšok nezmestil.]"

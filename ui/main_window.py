@@ -5,7 +5,8 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import QUrl, pyqtSignal
 from PyQt6.QtGui import QDesktopServices
-from core.constants import APP_NAME
+from core.constants import APP_NAME, ATTACHMENT_CUT_NOTE, PROMPT_RESERVE
+from core.constants import DOCX_SUFFIX, PDF_SUFFIX, TEXT_SUFFIXES, XLSX_SUFFIX
 from core.hardware import HardwareProfile
 from core.gguf import read_meta
 from core.monitor import UsageMonitor
@@ -18,10 +19,13 @@ from ui.sidebar import Sidebar, PAGE_CHAT
 from ui.properties_view import PropertiesView
 from ui.settings_view import SettingsView
 from ui.constants import WINDOW_MIN_SIZE, WINDOW_SIZE, PANEL_MARGIN
-from ui.formatting import size_text
+from ui.formatting import approx_tokens, int_text, size_text
+from extensions.file_parser import Attachment
+from ui.attachments import AttachmentService
 from ui.model_library import ModelLibrary
 from ui.settings_store import SettingsStore
 from ui.model_info import ModelInfoDialog
+from ui.text_preview import TextPreviewDialog
 from ui.toast import Toast, ToastHost
 
 __all__ = ["MainWindow"]
@@ -31,9 +35,10 @@ class MainWindow(QMainWindow):
     theme_changed = pyqtSignal(str)
 
 
-    def __init__(self, settings: SettingsStore, hardware: HardwareProfile, database: Database, controller: ChatController, library: ModelLibrary, monitor: UsageMonitor) -> None:
+    def __init__(self, settings: SettingsStore, hardware: HardwareProfile, database: Database, controller: ChatController, library: ModelLibrary, monitor: UsageMonitor, attachments: AttachmentService) -> None:
         super().__init__()
         self._controller = controller
+        self._attachments = attachments
         self._loading_toast: Toast | None = None
         self._import_toast: Toast | None = None
         self._library = library
@@ -92,13 +97,14 @@ class MainWindow(QMainWindow):
         
         composer = self._chat.composer
         composer.set_model_source(library.models)
-        composer.send_requested.connect(controller.send)
+        composer.send_requested.connect(self._on_send)
         composer.stop_requested.connect(controller.stop)
         composer.model_selected.connect(controller.select_model)
         controller.busy_changed.connect(composer.set_busy)
         controller.model_changed.connect(composer.set_model)
         controller.turn_started.connect(composer.begin_turn)
         controller.turn_started.connect(self._chat.begin_turn)
+        self._chat.messages.preview_requested.connect(self._on_history_preview)
         controller.token.connect(self._chat.append_token)
         controller.turn_finished.connect(self._chat.finish_turn)
         controller.turn_rolled_back.connect(lambda _question: self._chat.roll_back())
@@ -110,7 +116,11 @@ class MainWindow(QMainWindow):
         composer.add_model_requested.connect(self._on_add_model)
         composer.delete_model_requested.connect(self._on_delete_model)
         composer.set_features(current.attachments_enabled, current.web_search_enabled)
-        composer.attach_requested.connect(self._on_attach_preview)
+        composer.attach_requested.connect(self._on_attach)
+        composer.files_dropped.connect(self.add_attachments)
+        composer.attachments.preview_requested.connect(self._on_preview)
+        attachments.ready.connect(self._on_attachment_ready)
+        attachments.failed.connect(self._on_attachment_failed)
         composer.web_toggled.connect(self._on_web_preview)
         library.import_progress.connect(self._on_import_progress)
         library.import_finished.connect(self._on_import_finished)
@@ -424,8 +434,102 @@ class MainWindow(QMainWindow):
             ))
 
 
-    def _on_attach_preview(self) -> None:
-        self.show_notice(Notice.info("Prílohy sa pripravujú.", hint="Pribudnú v kroku 12."))
+    def _on_attach(self) -> None:
+        patterns = " ".join(f"*{suffix}" for suffix in sorted(TEXT_SUFFIXES | {PDF_SUFFIX, XLSX_SUFFIX, DOCX_SUFFIX}))
+        paths, _ = QFileDialog.getOpenFileNames(
+            self, "Pridať prílohu", str(Path.home()),
+            f"Podporované súbory ({patterns});;Všetky súbory (*)"
+        )
+        self.add_attachments([Path(path) for path in paths])
+
+
+    def add_attachments(self, paths: list[Path]) -> None:
+        bar = self._chat.composer.attachments
+        for path in paths:
+            bar.add(self._attachments.extract(path), path.name)
+
+
+    def _on_attachment_ready(self, job_id: int, item: Attachment) -> None:
+        """Rozpočet sa kontroluje až tu - pred extrakciou sa nedá vedieť, koľko z neho
+        príloha zje. Tokeny sú odhad (`dĺžka / 4`), presne ich spočíta až `build_prompt`."""
+        bar = self._chat.composer.attachments
+        budget = self._attachment_budget()
+        cost = approx_tokens(item.text)
+        if budget is not None and cost > budget:
+            item = self._trim(item, budget)
+            if item is None:
+                bar.remove(job_id)
+                self.show_notice(Notice.warning(
+                    "Na prílohu už v kontexte nezostalo miesto.",
+                    hint="Zväčši kontext vo Vlastnostiach alebo odober inú prílohu."
+                ))
+                return
+            self.show_notice(Notice.warning(
+                "Príloha sa do kontextu nezmestila celá, orezal som ju.",
+                hint=f"{item.title}: z ~{int_text(cost)} tokenov zostalo ~{int_text(approx_tokens(item.text))}. "
+                     "Celý text dostaneš, keď zväčšíš kontext vo Vlastnostiach a prílohu pridáš znova."
+            ))
+        bar.set_ready(job_id, item)
+
+
+    @staticmethod
+    def _trim(item: Attachment, budget: int) -> Attachment | None:
+        """Oreže text na rozpočet. Ukladá sa to, čo naozaj pôjde modelu, takže náhľad
+        ukazuje presne to, čo model dostane. Zvyšok sa po zväčšení kontextu nevráti sám -
+        prílohu treba pridať znova."""
+        room = budget * 4 - len(ATTACHMENT_CUT_NOTE)         # odhad tokenu je dĺžka / 4
+        if room <= 0:
+            return None
+        cut = item.text[:room]
+        end = cut.rfind("\n")
+        return Attachment(item.title, (cut[:end] if end > room // 2 else cut) + ATTACHMENT_CUT_NOTE, True)
+
+
+    def _on_send(self, text: str) -> None:
+        bar = self._chat.composer.attachments
+        if bar.pending():
+            self.show_notice(Notice.info("Počkaj, kým sa príloha spracuje."))
+            return
+        self._controller.send(text, bar.attachments())
+
+
+    def _on_attachment_failed(self, job_id: int, error: FukaiError) -> None:
+        self._chat.composer.attachments.remove(job_id)
+        self.show_notice(error.as_notice())
+
+
+    def _on_history_preview(self, attachment_id: int) -> None:
+        """Text príloh sa pri otvorení chatu nenačítava (12a), dotiahne sa až tu."""
+        try:
+            row = self._database.get_attachment(attachment_id)
+        except FukaiError as exc:
+            self.show_notice(exc.as_notice())
+            return
+        if row is not None:
+            TextPreviewDialog(row["title"], row["content"], self._settings.current.theme, self).exec()
+
+
+    def _on_preview(self, item) -> None:
+        TextPreviewDialog(item.title, item.text, self._settings.current.theme, self).exec()
+
+
+    def _attachment_budget(self) -> int | None:
+        try:
+            props = self._controller.properties()
+        except FukaiError as exc:
+            self.show_notice(exc.as_notice())
+            return None
+        if props is None:
+            return None
+        budget = props.load.n_ctx - props.sampling.max_tokens - PROMPT_RESERVE
+        if props.chat.system_prompt:
+            budget -= approx_tokens(props.chat.system_prompt)
+        question = self._chat.composer.text()
+        if question:
+            budget -= approx_tokens(question)
+        for ready in self._chat.composer.attachments.attachments():
+            budget -= approx_tokens(ready.text)
+        return budget
 
 
     def _on_web_preview(self, on: bool) -> None:

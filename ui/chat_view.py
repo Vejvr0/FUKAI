@@ -148,9 +148,9 @@ class ChatView(QWidget):
         self._set_empty(not messages)
     
     
-    def begin_turn(self, question: str) -> None:
+    def begin_turn(self, question: str, attachments: list[dict] | None = None) -> None:
         self._set_empty(False)
-        self.messages.begin_turn(question)
+        self.messages.begin_turn(question, attachments)
     
     
     def append_token(self, piece: str) -> None:

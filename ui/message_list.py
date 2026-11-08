@@ -3,12 +3,14 @@ from math import ceil
 from PyQt6.QtWidgets import (
     QFrame, QHBoxLayout, QVBoxLayout, QLabel, QScrollArea, QTextBrowser, QToolButton, QWidget
 )
-from PyQt6.QtCore import QEvent, QObject, QSize, Qt, QTimer
+from PyQt6.QtCore import QEvent, QObject, QSize, Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import (
     QColor, QFontMetricsF, QGuiApplication, QIcon, QTextBlockFormat, QTextCharFormat,
     QTextCursor, QTextOption
 )
+from ui.attachment_bar import ChipName
 from ui.constants import (
+    MSG_CHIP_HEIGHT, MSG_CHIP_SPACING,
     AVATAR_SIZE, BOX_MARGIN, BUBBLE_MAX_RATIO, CARET, CODE_HEAD_HEIGHT, CODE_MAX_HEIGHT,
     CODE_NO_LANGUAGE, COMPOSER_MAX_WIDTH, COPY_DONE_LABEL, COPY_LABEL, COPY_RESET_MS, ICO,
     LINE_HEIGHT, MESSAGE_SPACING, STICK_MARGIN, STREAM_FLUSH_MS
@@ -225,24 +227,83 @@ class _TableBox(_Body):
         self.reset_view()
 
 
-class _UserMessage(QWidget):
-    def __init__(self, text: str, parent: QWidget | None = None) -> None:
+class _MessageChip(QFrame):
+    """Príloha pri odoslanej správe. Na rozdiel od čipu v composeri sa nedá odobrať -
+    správa je odoslaná. Klikateľný je len vtedy, keď má príloha v databáze svoje id,
+    teda nie počas rozpísaného ťahu."""
+
+    clicked = pyqtSignal(int)
+
+
+    def __init__(self, title: str, attachment_id: int | None, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self.text = _TextView("bubbleText")
-        self.text.set_plain(text)
-        bubble = QFrame()
-        bubble.setObjectName("bubble")
-        inner = QVBoxLayout(bubble)
-        inner.setContentsMargins(16, 10, 16, 10)
-        inner.addWidget(self.text)
+        self.setObjectName("msgChip")
+        self.setFixedHeight(MSG_CHIP_HEIGHT)
+        self._id = attachment_id
+        self.setProperty("clickable", attachment_id is not None)
+        if attachment_id is None:
+            self.setToolTip(title)
+        else:
+            self.setCursor(Qt.CursorShape.PointingHandCursor)
+            self.setToolTip(f"{title}\nkliknutím zobrazíš text")
+
         row = QHBoxLayout(self)
-        row.setContentsMargins(0, 0, 0, 0)
-        row.addStretch(1)
-        row.addWidget(bubble)
-        
-    
+        row.setContentsMargins(10, 0, 10, 0)
+        row.setSpacing(6)
+        row.addWidget(ChipName(title))
+
+
+    def mouseReleaseEvent(self, event) -> None:
+        if self._id is not None and event.button() == Qt.MouseButton.LeftButton:
+            self.clicked.emit(self._id)
+        super().mouseReleaseEvent(event)
+
+
+class _UserMessage(QWidget):
+    """Bublina s otázkou a nad ňou čipy príloh. Správa bez textu (iba príloha) bublinu
+    nedostane vôbec - prázdna bublina vyzerá ako chyba."""
+
+    preview_requested = pyqtSignal(int)
+
+
+    def __init__(self, text: str, attachments: list[dict] | None = None,
+                 parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.text: _TextView | None = None
+
+        column = QVBoxLayout(self)
+        column.setContentsMargins(0, 0, 0, 0)
+        column.setSpacing(MSG_CHIP_SPACING)
+
+        if attachments:
+            chips = QHBoxLayout()
+            chips.setContentsMargins(0, 0, 0, 0)
+            chips.setSpacing(MSG_CHIP_SPACING)
+            chips.addStretch(1)
+            for item in attachments:
+                chip = _MessageChip(item["title"], item.get("id"))
+                chip.clicked.connect(self.preview_requested)
+                chips.addWidget(chip)
+            column.addLayout(chips)
+
+        if text:
+            self.text = _TextView("bubbleText")
+            self.text.set_plain(text)
+            bubble = QFrame()
+            bubble.setObjectName("bubble")
+            inner = QVBoxLayout(bubble)
+            inner.setContentsMargins(16, 10, 16, 10)
+            inner.addWidget(self.text)
+            row = QHBoxLayout()
+            row.setContentsMargins(0, 0, 0, 0)
+            row.addStretch(1)
+            row.addWidget(bubble)
+            column.addLayout(row)
+
+
     def fit(self, width: int) -> None:
-        self.text.fit(int(width * BUBBLE_MAX_RATIO) - 32, shrink=True)
+        if self.text is not None:
+            self.text.fit(int(width * BUBBLE_MAX_RATIO) - 32, shrink=True)
 
 
 class _AnswerMessage(QWidget):
@@ -356,6 +417,8 @@ class _AnswerMessage(QWidget):
 
 
 class MessageList(QScrollArea):
+    preview_requested = pyqtSignal(int)
+
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setObjectName("messageList")
@@ -416,14 +479,16 @@ class MessageList(QScrollArea):
                 self._add(answer)
                 answer.show_answer(data)
             else:
-                self._add(_UserMessage(data.get("text", "")))
+                user = _UserMessage(data.get("text", ""), message.get("attachments"))
+                user.preview_requested.connect(self.preview_requested)
+                self._add(user)
         self._stick = True
     
     
-    def begin_turn(self, question: str) -> None:
+    def begin_turn(self, question: str, attachments: list[dict] | None = None) -> None:
         if self._turn is not None:
             return
-        user = _UserMessage(question)
+        user = _UserMessage(question, attachments)
         answer = _AnswerMessage(self._avatar, self._theme)
         self._add(user)
         self._add(answer)

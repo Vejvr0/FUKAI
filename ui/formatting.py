@@ -1,7 +1,16 @@
 from __future__ import annotations
 from ui.constants import TOKENS_PER_PAGE
 
-__all__ = ["answer_meta", "int_text", "model_subtitle", "pages_text", "short_tokens", "size_text", "tokens_text"]
+__all__ = [
+    "answer_meta",
+    "approx_tokens",
+    "int_text",
+    "model_subtitle",
+    "pages_text",
+    "short_tokens",
+    "size_text",
+    "tokens_text"
+]
 
 
 def size_text(size_mb: float) -> str:
@@ -49,3 +58,7 @@ def pages_text(n_ctx: int) -> str:
     pages = max(1, round(n_ctx / TOKENS_PER_PAGE))
     word = "strana" if pages == 1 else "strany" if pages < 5 else "strán"
     return f"{int_text(pages)} {word}"
+
+
+def approx_tokens(text: str) -> int:
+    return max(1, round(len(text) / 4))

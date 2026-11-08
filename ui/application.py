@@ -16,6 +16,7 @@ from ui.chat_controller import ChatController
 from ui.model_library import ModelLibrary
 from ui.settings_store import SettingsStore
 from ui.llm_service import LlmService
+from ui.attachments import AttachmentService
 from ui.constants import ICNS, ICO, SPLASH_TIME, WINDOWS_APP_ID
 from ui.main_window import MainWindow
 from ui.splash import SplashScreen
@@ -48,6 +49,7 @@ class Application(QApplication):
         self.hardware: HardwareProfile | None = None
         self.database: Database | None = None
         self.llm: LlmService | None = None
+        self.attachments: AttachmentService | None = None
         self.chat: ChatController | None = None
         self.library: ModelLibrary | None = None
         self.monitor: UsageMonitor | None = None
@@ -75,7 +77,8 @@ class Application(QApplication):
         self.setStyleSheet(stylesheet(self.settings.current.theme))
         self.chat = ChatController(self.settings, self.hardware, self.database, self.llm)
         self.monitor = UsageMonitor(self.hardware)
-        self.window = MainWindow(self.settings, self.hardware, self.database, self.chat, self.library, self.monitor)
+        self.attachments = AttachmentService()
+        self.window = MainWindow(self.settings, self.hardware, self.database, self.chat, self.library, self.monitor, self.attachments)
         self.window.theme_changed.connect(self._set_theme)
         elapsed_ms = int((time.monotonic() - started) * 1000)
         QTimer.singleShot(max(0, SPLASH_TIME - elapsed_ms), lambda: self._show_main(splash))
@@ -179,6 +182,9 @@ class Application(QApplication):
         if self.monitor is not None:
             self.monitor.close()
             self.monitor = None
+        if self.attachments is not None:
+            self.attachments.shutdown()
+            self.attachments = None
         if self.database is not None:
             self.database.close()
             self.database = None

@@ -1,4 +1,4 @@
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 PRAGMAS = (
     "PRAGMA foreign_keys = ON",
     "PRAGMA journal_mode = WAL",
@@ -33,4 +33,13 @@ SCHEMA_V1 = ("""
         data TEXT NOT NULL DEFAULT '{}'
     );
     CREATE INDEX IF NOT EXISTS idx_content_chat ON content(chat_id);
+""")
+SCHEMA_V2 = ("""
+    CREATE TABLE IF NOT EXISTS attachments (
+        id INTEGER PRIMARY KEY,
+        title TEXT NOT NULL,
+        content TEXT NOT NULL DEFAULT '',
+        message_id INTEGER NOT NULL REFERENCES content(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_attachments_message ON attachments(message_id);
 """)

@@ -1,7 +1,7 @@
 from __future__ import annotations
 from dataclasses import dataclass, field
 from PyQt6.QtCore import QObject, pyqtSignal
-from core.context import HistoryItem
+from core.context import HistoryItem, with_attachments
 from core.hardware import HardwareProfile
 from core.llm_engine import FinishReason
 from core.settings import ChatProperties, LoadParams, ModelMeta
@@ -24,6 +24,7 @@ class _Turn:
     props: ChatProperties
     question: str
     history: list[HistoryItem]
+    attachments: list = field(default_factory=list)
     request_id: int | None = None
     parts: list[str] = field(default_factory=list)
 
@@ -34,7 +35,7 @@ class ChatController(QObject):
     chats_changed = pyqtSignal(object)
     loading_started = pyqtSignal(str)
     loading_finished = pyqtSignal()
-    turn_started = pyqtSignal(str)
+    turn_started = pyqtSignal(str, object)
     token = pyqtSignal(str)
     turn_finished = pyqtSignal(object)
     turn_rolled_back = pyqtSignal(str)
@@ -114,7 +115,7 @@ class ChatController(QObject):
         
         turn = self._turn
         if turn is not None and turn.chat_id == chat_id:
-            self.turn_started.emit(turn.question)
+            self.turn_started.emit(turn.question, [{"title": a.title} for a in turn.attachments])
             if turn.parts:
                 self.token.emit("".join(turn.parts))
     
@@ -179,11 +180,12 @@ class ChatController(QObject):
         self._database.set_properties(self._chat_id, props.to_dict())
 
 
-    def send(self, text: str) -> None:
+    def send(self, text: str, attachments: list | None = None) -> None:
         if self.busy:
             raise RuntimeError("ChatController je zaneprázdnený - počkaj na busy_changed(False)")
         question = text.strip()
-        if not question:
+        attachments = list(attachments or ())
+        if not question and not attachments:
             return
         model = self._database.get_model(self._model_id) if self._model_id is not None else None
         if model is None:
@@ -199,14 +201,15 @@ class ChatController(QObject):
                 history: list[HistoryItem] = []
             else:
                 props = ChatProperties.from_dict(self._database.get_properties(self._chat_id) or {}, self._model_path(model))
-                history = [HistoryItem(m["id"], m["role"], m["data"].get("text", ""), m["tokens"]) for m in self._database.get_messages(self._chat_id)]
+                history = self._history(self._chat_id)
         except FukaiError as exc:
             self.notice.emit(exc.as_notice())
             return
 
-        self._turn = _Turn(self._view, self._chat_id, model["id"], model["title"], props, question, history)
+        self._turn = _Turn(self._view, self._chat_id, model["id"], model["title"], props, question,
+                           history, attachments)
         self.busy_changed.emit(True)
-        self.turn_started.emit(question)
+        self.turn_started.emit(question, [{"title": item.title} for item in attachments])
 
         if self._loaded is None or self._loaded.clamped() != props.load.clamped():
             self.loading_started.emit(model["title"])
@@ -220,10 +223,23 @@ class ChatController(QObject):
             self._llm.stop()
 
 
+    def _history(self, chat_id: int) -> list[HistoryItem]:
+        """Správa používateľa ide do promptu aj s textom svojich príloh - tak, ako bola
+        odoslaná. Inak by sa model po druhej otázke na obsah súboru už nedostal."""
+        files = self._database.get_attachments(chat_id, content=True)
+        history = []
+        for message in self._database.get_messages(chat_id):
+            text = message["data"].get("text", "")
+            attached = [(row["title"], row["content"]) for row in files.get(message["id"], ())]
+            history.append(HistoryItem(message["id"], message["role"],
+                                       with_attachments(text, attached), message["tokens"]))
+        return history
+
+
     def _generate(self) -> None:
         turn = self._turn
         turn.request_id = self._llm.generate(
-            turn.history, turn.question,
+            turn.history, with_attachments(turn.question, [(a.title, a.text) for a in turn.attachments]),
             sampling=turn.props.sampling,
             system_prompt=turn.props.chat.system_prompt
         )
@@ -282,12 +298,14 @@ class ChatController(QObject):
             },
             "dropped": result.dropped,
         }
+        files = [{"title": item.title, "content": item.text} for item in turn.attachments]
         new_chat = None
         if turn.chat_id is None:
-            new_chat = (turn.model_id, self._title(turn.question), turn.props.to_dict())
+            new_chat = (turn.model_id, self._title(turn), turn.props.to_dict())
         try:
             chat_id = self._database.add_turn(turn.chat_id, {"text": turn.question}, answer,
-                                        answer_tokens=result.completion_tokens, new_chat=new_chat)
+                                        answer_tokens=result.completion_tokens, new_chat=new_chat,
+                                        attachments=files)
         except FukaiError as exc:
             self.notice.emit(exc.as_notice())
             self._roll_back()
@@ -338,5 +356,9 @@ class ChatController(QObject):
 
 
     @staticmethod
-    def _title(question: str) -> str:
-        return " ".join(question.split()[:TITLE_WORDS])
+    def _title(turn: _Turn) -> str:
+        """Názov chatu je začiatok otázky; pri správe bez textu ho dá prvá príloha."""
+        title = " ".join(turn.question.split()[:TITLE_WORDS])
+        if title:
+            return title
+        return turn.attachments[0].title if turn.attachments else NEW_CHAT_TITLE

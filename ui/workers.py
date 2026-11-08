@@ -10,14 +10,17 @@ from core.gguf import check_usable, read_meta
 from core.context import HistoryItem, build_prompt
 from core.llm_engine import FinishReason, LlmEngine
 from core.settings import LoadParams, SamplingParams
-from core.errors import FukaiError, GenerationError, ModelImportError, ModelLoadError
+from core.errors import FukaiError, GenerationError, ModelImportError, ModelLoadError, AttachmentError
+from extensions.file_parser import extract
 
 __all__ = [
     "GenerateRequest",
     "GenerationResult",
     "ImportRequest",
     "ImportWorker",
-    "LlmWorker"
+    "LlmWorker",
+    "ExtractRequest",
+    "ExtractWorker"
 ]
 
 
@@ -196,3 +199,24 @@ class ImportWorker(QObject):
                 message="Kopírovanie modelu do knižnice zlyhalo."
             ) from exc
         return True
+
+
+@dataclass(frozen=True)
+class ExtractRequest:
+    job_id: int
+    path: Path
+
+
+class ExtractWorker(QObject):
+    ready = pyqtSignal(int, object)
+    failed = pyqtSignal(int, object)
+
+
+    @pyqtSlot(object)
+    def run(self, request: ExtractRequest) -> None:
+        try:
+            self.ready.emit(request.job_id, extract(request.path))
+        except FukaiError as exc:
+            self.failed.emit(request.job_id, exc)
+        except Exception as exc:
+            self.failed.emit(request.job_id, AttachmentError(f"{type(exc).__name__}: {exc}"))

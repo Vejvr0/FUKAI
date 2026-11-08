@@ -26,7 +26,7 @@ from ui.constants import (
     PROPERTIES_SAVED_FLASH, PROPERTIES_SAVED_MS, PROPERTIES_SAVED_TEXT, PROPERTIES_TITLE,
     SCOPE_CHARS, SEED_FALLBACK, SLIDER_HANDLE, TICK_SPACING
 )
-from ui.formatting import int_text, pages_text, short_tokens, size_text, tokens_text
+from ui.formatting import int_text, pages_text, short_tokens, size_text, tokens_text, approx_tokens
 from ui.toggle_switch import ToggleSwitch
 
 __all__ = ["PropertiesView"]
@@ -955,7 +955,7 @@ class PropertiesView(QWidget):
         if not text.strip():
             self._prompt_hint.setText(PROMPT_EMPTY_HINT)
             return
-        self._prompt_hint.setText(tokens_text(_approx_tokens(text)))
+        self._prompt_hint.setText(tokens_text(approx_tokens(text)))
 
 
     def _on_prompt_changed(self) -> None:
@@ -1118,7 +1118,3 @@ class PropertiesView(QWidget):
             return f"Predvolené pre nový chat · {model['title']}"
         short = chat_title if len(chat_title) <= SCOPE_CHARS else chat_title[:SCOPE_CHARS] + "…"
         return f"Chat: {short} · {model['title']}"
-
-
-def _approx_tokens(text: str) -> int:
-    return max(1, round(len(text) / 4))

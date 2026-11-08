@@ -81,6 +81,7 @@ SETTINGS_SAVED_MS = 1500
 SETTINGS_FOOT = "FUKAI · všetky dáta zostávajú na tvojom počítači"
 SET_ICON_BOX = 38
 SET_ICON_SIZE = 18
+ICON_SUPERSAMPLE = 3
 SWITCH_WIDTH = 46
 SWITCH_HEIGHT = 26
 SWITCH_KNOB = 20
@@ -135,3 +136,18 @@ PROMPT_PRESETS = {
                    "len to podstatné.",
     "Stručné odpovede": "Odpovedaj čo najstručnejšie, najviac v 2-3 vetách, po slovensky.",
 }
+CHIP_HEIGHT = 26
+CHIP_NAME_MAX = 130
+CHIP_NAME_MIN = 40
+CHIP_BUTTON = 16
+CHIP_CLOSE = "✕"
+MSG_CHIP_HEIGHT = 24
+MSG_CHIP_SPACING = 6
+CHIP_SPACING = (6, 6)
+CHIP_MIN_WIDTH = 150
+CHIP_PENDING = "spracúvam…"
+CHIP_TRIMMED = "orezané"
+PREVIEW_TITLE = "Text prílohy"
+PREVIEW_WIDTH = 720
+PREVIEW_HEIGHT = 520
+PREVIEW_SHADOW = 28

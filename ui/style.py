@@ -400,6 +400,30 @@ _QSS = Template("""
         border: 1px dashed $line; border-radius: 14px;
         padding: 12px 16px;
     }
+
+    QFrame#chip {
+        background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 $glass_top, stop:1 $glass_bottom);
+        border: 1px solid $glass_border;
+        border-radius: 13px;
+    }
+    QFrame#chip:hover { background: $chip_hover; }
+    QLabel#chipName { font-size: 12px; }
+    QFrame#msgChip {
+        background: $chip; border: 1px solid $line; border-radius: 12px;
+    }
+    QFrame#msgChip[clickable="true"]:hover { background: $chip_hover; }
+    QLabel#chipMeta { color: $text_muted; font-size: 11px; }
+    QToolButton#chipClose {
+        border: none; border-radius: 8px; background: transparent;
+        color: $text_muted; font-size: 11px;
+    }
+    QToolButton#chipClose:hover { background: $chip_hover; color: $text; }
+    QPlainTextEdit#previewText {
+        background: $chip; border: 1px solid $line; border-radius: 10px;
+        padding: 8px; color: $text;
+        font-family: $code_font; font-size: 12px;
+        selection-background-color: $accent; selection-color: #0D1E48;
+    }
 """)
 
 _RGBA = re.compile(r"rgba\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*([\d.]+)\s*\)")

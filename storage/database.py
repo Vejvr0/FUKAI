@@ -8,7 +8,7 @@ from pathlib import Path
 from core.paths import db_path, ensure_dir
 from core.errors import StorageError
 from storage.constants import (
-    SCHEMA_VERSION, PRAGMAS, SCHEMA_V1
+    SCHEMA_VERSION, PRAGMAS, SCHEMA_V1, SCHEMA_V2
 )
 
 __all__ = [
@@ -30,7 +30,6 @@ class Database:
         self.created = False
 
 
-    # --- DB connection handling ---
     def connect(self) -> None:
         if self._conn is not None:
             return
@@ -83,7 +82,6 @@ class Database:
         return self._conn
 
 
-    # --- DB schema ---
     def _migrate(self) -> None:
         conn = self._require_conn()
         version = conn.execute("PRAGMA user_version").fetchone()[0]
@@ -101,13 +99,14 @@ class Database:
             with self._lock, conn:
                 if version < 1:
                     conn.executescript(SCHEMA_V1)
+                if version < 2:
+                    conn.executescript(SCHEMA_V2)
                 conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
         except sqlite3.Error as exc:
             raise StorageError(f"{type(exc).__name__}: {exc}") from exc
         self.created = version == 0
 
 
-    # --- Read and Write ---
     def query(self, sql: str, params: tuple = ()) -> list[dict]:
         conn = self._require_conn()
         try:
@@ -122,7 +121,6 @@ class Database:
             return conn.execute(sql, params).lastrowid
 
 
-    # --- Model methods ---
     def add_model(self, title: str, path: str, meta: dict | None = None) -> int:
         meta_json = json.dumps(meta or {})
         return self.execute("INSERT INTO models (title, path, meta) VALUES (?, ?, ?)", (title, path, meta_json,))
@@ -150,7 +148,6 @@ class Database:
         self.execute("UPDATE models SET last_used_at = (datetime('now')) WHERE id = ?", (model_id,))
 
 
-    # --- Chats methods ---
     def create_chat(self, model_id: int, title: str, properties: dict) -> int:
         with self.transaction() as conn:
             chat_id = conn.execute("INSERT INTO chats (title, model_id) VALUES (?, ?)", (title, model_id)).lastrowid
@@ -177,7 +174,6 @@ class Database:
             conn.execute("UPDATE content SET tokens = NULL WHERE chat_id = ?", (chat_id,))
 
 
-    # --- Chat messages methods ---
     def add_message(self, chat_id: int, data: dict, tokens: int | None, role: str) -> int:
         with self.transaction() as conn:
             message_id = conn.execute("INSERT INTO content (data, tokens, role, chat_id) VALUES (?, ?, ?, ?)", (json.dumps(data), tokens, role, chat_id)).lastrowid
@@ -185,7 +181,7 @@ class Database:
         return message_id
     
     
-    def add_turn(self, chat_id: int | None, question: dict, answer: dict, *, answer_tokens: int | None = None, new_chat: tuple[int, str, dict] | None = None) -> int:
+    def add_turn(self, chat_id: int | None, question: dict, answer: dict, *, answer_tokens: int | None = None, new_chat: tuple[int, str, dict] | None = None, attachments: list[dict] | None = None) -> int:
         if chat_id is None and new_chat is None:
             raise ValueError("add_turn bez chat_id potrebuje new_chat")
         with self.transaction() as conn:
@@ -193,7 +189,9 @@ class Database:
                 model_id, title, properties = new_chat
                 chat_id = conn.execute("INSERT INTO chats (title, model_id) VALUES (?, ?)", (title, model_id)).lastrowid
                 conn.execute("INSERT INTO properties (chat_id, data) VALUES (?, ?)", (chat_id, json.dumps(properties)))
-            conn.execute("INSERT INTO content (data, tokens, role, chat_id) VALUES (?, NULL, 'user', ?)", (json.dumps(question), chat_id))
+            question_id = conn.execute("INSERT INTO content (data, tokens, role, chat_id) VALUES (?, NULL, 'user', ?)", (json.dumps(question), chat_id)).lastrowid
+            for item in attachments or ():
+                conn.execute("INSERT INTO attachments (title, content, message_id) VALUES (?, ?, ?)", (item["title"], item["content"], question_id))
             conn.execute("INSERT INTO content (data, tokens, role, chat_id) VALUES (?, ?, 'assistant', ?)", (json.dumps(answer), answer_tokens, chat_id))
             conn.execute("UPDATE chats SET updated_at = (datetime('now')) WHERE id = ?", (chat_id,))
         return chat_id
@@ -210,7 +208,25 @@ class Database:
 
     def get_messages(self, chat_id: int) -> list[dict]:
         rows = self.query("SELECT id, data, tokens, role FROM content WHERE chat_id = ? ORDER BY id ASC", (chat_id,))
-        return [_parse_json(row, "data") for row in rows]
+        messages = [_parse_json(row, "data") for row in rows]
+        files = self.get_attachments(chat_id)
+        for message in messages:
+            message["attachments"] = files.get(message["id"], [])
+        return messages
+
+
+    def get_attachments(self, chat_id: int, *, content: bool = False) -> dict[int, list[dict]]:
+        columns = "a.id, a.message_id, a.title" + (", a.content" if content else "")
+        rows = self.query(f"SELECT {columns} FROM attachments a JOIN content c ON c.id = a.message_id WHERE c.chat_id = ? ORDER BY a.id ASC", (chat_id,))
+        grouped: dict[int, list[dict]] = {}
+        for row in rows:
+            grouped.setdefault(row["message_id"], []).append(row)
+        return grouped
+
+
+    def get_attachment(self, attachment_id: int) -> dict | None:
+        rows = self.query("SELECT id, title, content FROM attachments WHERE id = ?", (attachment_id,))
+        return rows[0] if rows else None
 
 
     def content_tokens(self, chat_id: int) -> int:
@@ -225,7 +241,6 @@ class Database:
             conn.executemany("UPDATE content SET tokens = ? WHERE id = ?", [(tokens, message_id) for message_id, tokens in counted.items()])
 
 
-    # --- Chat properties methods ---
     def get_properties(self, chat_id: int) -> dict | None:
         rows = self.query("SELECT data FROM properties WHERE chat_id = ?", (chat_id,))
         return _parse_json(rows[0], "data")["data"] if rows else None

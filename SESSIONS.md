@@ -696,9 +696,30 @@ Hlavička sa číta nanovo zo súboru, nie z `models.meta` – 60 ms v UI vlákn
 
 Krok 9 dostal na začiatku **index kúskov** (tabuľka 14 riadkov so stavom a commitmi), pribudla **§8.2 s opakujúcimi sa pascami** Qt a Pythonu, zastaraná matica wheelov v §3.1 a spracované poznatky z notebooku sa skrátili. Zoznamy preklepov z prepisu a matica testu z PC 1 sa presunuli sem do príloh – ALMANAC sa načítava do kontextu pri každom spustení, denník nie.
 
+### Prílohy (krok 12, poobede a večer)
+
+Celý krok 12 okrem čipov v histórii: migrácia schémy na v2, `extensions/file_parser.py`, extrakcia vo vlastnom vlákne, čipy v composeri s drag & drop a náhľadom, príloha do promptu aj do databázy a orezanie na kontext. Rozhodnutia a pasce sú v ALMANAC §8 krok 12. Overené naživo: Gemma prečítala heslo zo zápisnice v prílohe a zhrnula recept poslaný **bez akéhokoľvek textu**.
+
+| Zistenie | Prečo bolo zradné |
+|---|---|
+| chýbajúci `setObjectName(\"chip\")` | QSS `QFrame#chip` sa nechytilo, takže úpravy vzhľadu nemali žiadny účinok - vyzeralo to, že sa opravy neprejavili |
+| `icon(\"×\")` namiesto `icon(\"x\")` | znak násobenia miesto písmena, hľadal sa `×.svg` |
+| `chip._reflow()` miesto `self._reflow()` | výnimka v slote zhodila proces bez výpisu, appka len zmizla |
+| `_reflow(force=True)` v `resizeEvent` | v composeri sa layout zacyklil a okno zamrzlo pri pridaní prvého čipu |
+| SVG ✕ pri 10 px | ťah 0,8 px, guľaté konce zmiznú a krížik vyzerá odseknutý; supersampling nepomohol, krížik je teraz text |
+| umelý drop v teste | bez predchádzajúceho `QDragEnterEvent` Qt drop ticho zahodí |
+
+### 12e – čipy pri správach (2026-11-09 ráno)
+
+Posledný kúsok príloh: čipy nad bublinou otázky (v histórii klikateľné, otvoria náhľad textu) a správa bez textu už nemá prázdnu bublinu. Text prílohy sa dotiahne z databázy až pri kliknutí, otvorenie chatu teda ostáva lacné. Overené naživo (`t24_history.py` 8/8): dve správy - jedna s textom, jedna len s prílohou - prežili zatvorenie a znovuotvorenie chatu aj s čipmi.
+
+Regresia po celom kroku 12: `t7_live` 17/17, `t12_bar` 20/20, `t13_attach_live` 17/17, `t17_send` 15/15, `t20_only_file` 9/9, `t24_history` 8/8 a self-testy `storage.database`, `core.gguf`, `core.context`, `core.settings`, `ui.markdown`.
+
 ### Nedoriešené do ďalšej session
 
-1. **Commit** modalu s informáciami o modeli (`ui/model_info.py`, `ui/settings_view.py`, `ui/main_window.py`, `ui/style.py`, `ui/constants.py`) a denníka. Stránka Vlastnosti je commitnutá (`79fc572` + `cdfe7cd`), ALMANAC refactor tiež (`10479c5`).
+1. 🔴 **Appka spadne, keď sa počas generovania zmaže chat zo zoznamu** (ALMANAC §8 krok 9, prvý bod otvorených). Prvé na rad.
+2. **12e** - čipy príloh nad bublinou v histórii; správa bez textu má zatiaľ prázdnu bublinu.
+3. **Commit** modalu s informáciami o modeli (`ui/model_info.py`, `ui/settings_view.py`, `ui/main_window.py`, `ui/style.py`, `ui/constants.py`) a denníka. Stránka Vlastnosti je commitnutá (`79fc572` + `cdfe7cd`), ALMANAC refactor tiež (`10479c5`).
 2. **Krok 12 – prílohy**: prvá migrácia schémy (`SCHEMA_VERSION` na 2), tabuľka `attachments`, extrakcia textu z pdf/xlsx/docx, kontrola tokenov proti kontextu.
 3. Toast sa prekrýva s prvou kartou na stránkach Vlastnosti aj Nastavenia (`TOAST_TOP`).
 4. Počet tokenov systémového promptu je odhad `dĺžka / 4`, nie `llm.tokenize()`.

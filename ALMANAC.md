@@ -1,6 +1,6 @@
 # FUKAI – Almanac
 
-Zdieľaná pamäť projektu pre Claude Code na všetkých strojoch (Mac aj PC). Sem patria rozhodnutia, obmedzenia a kontext, ktorý sa nedá vyčítať z kódu. Pri zmene rozhodnutia prepíš príslušnú sekciu, nepridávaj protichodné záznamy. Posledná revízia: 2026-11-08.
+Zdieľaná pamäť projektu pre Claude Code na všetkých strojoch (Mac aj PC). Sem patria rozhodnutia, obmedzenia a kontext, ktorý sa nedá vyčítať z kódu. Pri zmene rozhodnutia prepíš príslušnú sekciu, nepridávaj protichodné záznamy. Posledná revízia: 2026-11-09.
 
 ## 1. Projekt
 
@@ -837,13 +837,32 @@ Platí teda pravidlo: **vnútri `transaction()` sa volá `conn.execute()`, nikdy
    - **Pasca v teste (nie v appke):** klik treba poslať cez `QApplication.sendEvent`, inak sa event filter neuplatní; a `exec()` modalu blokuje, takže zatvorenie si treba naplánovať časovačom **pred** kliknutím.
 
    **Čo v kroku 9 zostáva otvorené** (hotové kúsky sú v tabuľke na začiatku kroku):
+   - 🔴 **PRIORITA – appka spadne, keď sa počas generovania zmaže chat zo zoznamu** (hlásil autor 2026-11-08 na PC 1, pád celého procesu, nie `FukaiError`). Zapísané ako prvé na ďalšiu session.
+     **Čo je známe:** `MainWindow._on_delete_chat` odmietne zmazať chat, **do ktorého práve beží ťah** (`ChatController.turn_chat_id`), ale táto poistka nepokrýva dva prípady: (1) odpoveď beží v chate, ktorý ešte nevznikol (`turn_chat_id` je vtedy `None`, §7.1), (2) zmaže sa **iný** chat než ten s odpoveďou, pričom ide o práve zobrazený chat.
+     **Prvá hypotéza (neoverená):** pri zmazaní zobrazeného chatu sa volá `reload_chats()` + `controller.new_chat()`, čo prekreslí `MessageList` - a tokeny, ktoré medzitým prichádzajú, dorazia do `_AnswerMessage`, ktorého C++ objekt je už zmazaný. „Wrapped C/C++ object has been deleted“ je výnimka v slote, a tá zhodí celý proces (§8.2). Sedí to aj s tým, že nebolo vidieť žiadne hlásenie.
+     **Kde začať:** `MainWindow._on_delete_chat`, `ChatController._visible()` a číslovanie zobrazení (`_view`), `ChatView.begin_turn` / `append_token`. Overiť v živom okne: dlhá odpoveď → zmazať zobrazený chat; a to isté v chate, ktorý ešte nevznikol.
+     **Smery riešenia (rozhodnúť zajtra):** zakázať mazanie ktoréhokoľvek chatu počas generovania (najjednoduchšie, ale obmedzujúce); alebo pri zmazaní chatu s bežiacim ťahom ťah vrátiť (`_roll_back`) a až potom mazať; alebo spraviť streamovacie sloty odolné (kontrola, že cieľová správa ešte existuje).
    - **Toast sa prekrýva s prvou kartou** na stránkach Vlastnosti aj Nastavenia – `TOAST_TOP` je počítaný pre hlavičku chatu.
    - **Neoverené na Windows:** chat dlhý natoľko, že sa začne orezávať história (`dropped`), a správanie pri plnej VRAM. Na macOS: GPU % v monitore (`ioreg`) a všetko z kúskov 7–9, ktoré vznikli na PC.
    - **Drobnosti:** počet tokenov systémového promptu je odhad `dĺžka / 4`, nie `llm.tokenize()`; kontextové menu textu je po anglicky (Qt bez prekladov); výber textu myšou cez viac častí odpovede nejde (každá časť je vlastný `QTextBrowser`).
    - **Ponúknuté, nerozhodnuté:** `sys.excepthook` → fatálny dialóg pri neodchytenej výnimke; generátor ikon do repa (`tools/`).
 10. [x] **Čítač hlavičky `.gguf`, ktorý nenačíta model** – *robený v kroku 9 ako kúsok 5b (vyššie), hotový a commitnutý 2026-11-05 (`44fc7e6`).* Prerekvizita importu modelu. *Overené 2026-10-30:* `n_layers` aj `n_ctx_train` v `llm_engine.py` idú cez `self._llm._model.model`, teda sú dostupné **až po `load()`**. Popup so zoznamom modelov a rozsahy slidrov ich ale potrebujú **pred** načítaním, preto sa čítajú raz pri importe a cachujú v `models.meta` (§7.1). Pri vytváraní chatu to nevadí – model vtedy už beží.
 11. [x] Panel nastavení per chat + výber a import modelu – *výber a import modelu sú v kroku 9 (kúsky 5a–5c), panel vlastností je kúsok 9 (2026-11-08).*
-12. [ ] Prílohy (drag & drop, extrakcia, kontrola tokenov) – prvá migrácia schémy, `SCHEMA_VERSION` na 2
+12. [x] **Prílohy – hotové 2026-11-09** (drag & drop, extrakcia, kontrola tokenov). Hotové kúsky:
+
+    | Kúsok | Čo | Stav |
+    |---|---|---|
+    | 12a | migrácia schémy na v2, tabuľka `attachments`, `add_turn`/`get_attachments` | ✅ |
+    | 12b | `extensions/file_parser.py` – txt/md/csv/json/kód, PDF, xlsx, docx | ✅ |
+    | 12c | `AttachmentService` vo vlastnom vlákne, čipy v composeri, drag & drop, náhľad textu | ✅ |
+    | 12d | príloha do promptu, do databázy a späť do histórie, orezanie na kontext | ✅ |
+    | 12e | čipy príloh pri správach, správa bez textu | ✅ |
+
+    Rozhodnutia (autor, 2026-11-08): **text prílohy zostáva súčasťou tej správy, pri ktorej bol pripnutý** – do promptu teda ide aj pri ďalších otázkach; **extrakcia beží vo vlastnom vlákne** (veľké PDF trvá sekundy); **limit je len kontext**, nie počet súborov – každá príloha sa pri pripnutí odpočíta z voľného rozpočtu a ďalšia dostane zvyšok; **čo sa nezmestí, sa oreže** a čip to povie (`orezané`); **samotná príloha bez textu je platná správa** a názov chatu potom vznikne z názvu súboru.
+    Hranice: `extensions/file_parser.py` nevie o Qt a vracia iba `AttachmentError`; `AttachmentService` nevie o widgetoch; `AttachmentBar` nevie o službe ani o vlastnostiach chatu – rozpočet počíta `MainWindow`. Text prílohy sa do promptu vkladá **do tej istej správy ako otázka** (`core/context.with_attachments`), lebo samostatná správa by rozbila striedanie rolí, na ktorom trvá Gemma (§8 krok 3).
+    Pasce, ktoré to stálo: chýbajúci `setObjectName("chip")` (QSS sa nechytilo, čip bol bez pozadia aj zaoblenia); `icon("×")` namiesto `icon("x")` → `FileNotFoundError` pri každom čipe; `chip._reflow()` namiesto `self._reflow()` → výnimka v slote zhodila proces; `self._chips.get()` namiesto `.pop()` nechal zmazaný widget v slovníku; `_reflow(force=True)` v `resizeEvent` sa v composeri zacyklil; **SVG ✕ pri 10 px je kocka** (ťah 0,8 px, guľaté konce zmiznú) – krížik je preto text, ako v dialógoch.
+    **Kúsok 12e (2026-11-09):** čipy príloh sú nad bublinou otázky - v rozpísanom ťahu bez možnosti kliknúť, v histórii klikateľné (náhľad textu). **Správa bez textu bublinu nedostane vôbec**, zostanú len čipy; prázdna bublina vyzerala ako chyba. Text príloh sa pri otvorení chatu stále nenačítava (§12a), náhľad si ho dotiahne až pri kliknutí cez `Database.get_attachment(id)`. `ChipName` (skracovanie názvu v strede) je spoločná pre composer aj históriu - preto sa z `_Name` stala verejná trieda v `ui/attachment_bar.py`. `turn_started` nesie okrem otázky aj zoznam názvov príloh, takže čipy vidno hneď pri odoslaní; `Composer.begin_turn` má stále jeden parameter, lebo Qt slotu s menej parametrami nadbytočné zahodí.
+    Neoverené: správanie na macOS, veľmi veľké PDF (stovky strán) a súbeh importu modelu s extrakciou prílohy.
 13. [ ] Web rozšírenie
 14. [ ] Doladenie: témy, markdown, ikony, PyInstaller
 

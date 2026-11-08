@@ -1,4 +1,5 @@
 from __future__ import annotations
+from pathlib import Path
 from typing import Callable
 from PyQt6.QtWidgets import (
     QApplication, QFrame, QGraphicsDropShadowEffect, QHBoxLayout, QVBoxLayout, QLabel, QMenu,
@@ -6,6 +7,7 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import QEvent, QObject, QPoint, QSize, Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QIcon, QKeyEvent, QPalette, QTextOption
+from ui.attachment_bar import AttachmentBar
 from ui.constants import (
     COMPOSER_BUTTON, COMPOSER_INPUT_MAX_HEIGHT, MODEL_MENU_WIDTH, MODEL_PILL_TEXT_WIDTH, NO_MODEL
 )
@@ -198,6 +200,7 @@ class Composer(QFrame):
     add_model_requested = pyqtSignal()
     delete_model_requested = pyqtSignal(int)
     attach_requested = pyqtSignal()
+    files_dropped = pyqtSignal(object)
     web_toggled = pyqtSignal(bool)
     
     
@@ -213,10 +216,18 @@ class Composer(QFrame):
         self._model_source: Callable[[], list[dict]] = list
         self._theme = "light"
         
+        self._attachments_enabled = True
+        self._sent: list = []
+        self.attachments = AttachmentBar()
+
         self._input = _Input()
+        self._input.setAcceptDrops(False)
+        self.setAcceptDrops(True)
         self._input.installEventFilter(self)
         self._input.submitted.connect(self._submit)
         self._input.textChanged.connect(self._update_buttons)
+        # Pribudnutá alebo odobraná príloha mení, či sa dá odoslať.
+        self.attachments.changed.connect(self._update_buttons)
         
         hint = QLabel("Enter odoslať · Shift+Enter nový riadok")
         hint.setObjectName("composerHint")
@@ -249,6 +260,7 @@ class Composer(QFrame):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(18, 12, 12, 10)
         layout.setSpacing(6)
+        layout.addWidget(self.attachments)
         layout.addWidget(self._input)
         layout.addLayout(bar)
         
@@ -269,7 +281,29 @@ class Composer(QFrame):
         return button
 
 
+    def text(self) -> str:
+        return self._input.toPlainText().strip()
+
+
+    def dragEnterEvent(self, event) -> None:
+        if self._attachments_enabled and event.mimeData().hasUrls():
+            event.acceptProposedAction()
+
+
+    def dragMoveEvent(self, event) -> None:
+        if self._attachments_enabled and event.mimeData().hasUrls():
+            event.acceptProposedAction()
+
+
+    def dropEvent(self, event) -> None:
+        paths = [Path(url.toLocalFile()) for url in event.mimeData().urls() if url.isLocalFile()]
+        if self._attachments_enabled and paths:
+            event.acceptProposedAction()
+            self.files_dropped.emit(paths)
+
+
     def set_features(self, attachments: bool, web_search: bool) -> None:
+        self._attachments_enabled = attachments
         self._attach.setVisible(attachments)
         self._web.setVisible(web_search)
         if not web_search and self._web.isChecked():
@@ -284,6 +318,7 @@ class Composer(QFrame):
     
     def set_theme(self, theme: str) -> None:
         self._theme = theme
+        self.attachments.set_theme(theme)
         tokens = THEMES[theme]
         text = tokens["text"]
         self._attach.setIcon(icon("plus", text))
@@ -322,17 +357,26 @@ class Composer(QFrame):
     def begin_turn(self, question: str) -> None:
         if self._input.toPlainText().strip() == question:
             self._input.clear()
+        # Prílohy odišli so správou - z baru zmiznú, ale držíme ich pre prípad vrátenia ťahu.
+        sent = self.attachments.attachments()
+        if sent:
+            self._sent = sent
+            self.attachments.clear()
         self._generating = True
         self._update_buttons()
     
     
     def end_turn(self) -> None:
+        self._sent = []
         self._generating = False
         self._update_buttons()
     
     
     def roll_back(self, question: str) -> None:
         self._generating = False
+        if self._sent and not self.attachments.attachments():
+            self.attachments.restore(self._sent)
+        self._sent = []
         if not self._input.toPlainText().strip():
             self._input.setPlainText(question)
             self._input.moveCursor(self._input.textCursor().MoveOperation.End)
@@ -355,8 +399,10 @@ class Composer(QFrame):
     
     def _submit(self) -> None:
         text = self._input.toPlainText().strip()
-        if text and not self._busy:
-            self.send_requested.emit(text)
+        # Samotná príloha je platná správa - text nie je povinný.
+        if self._busy or not (text or self.attachments.attachments()):
+            return
+        self.send_requested.emit(text)
     
     
     def _on_send_clicked(self) -> None:
@@ -373,7 +419,8 @@ class Composer(QFrame):
             self._send.setToolTip("Model sa načítava – zastaviť sa dá až odpoveď" if self._loading else "Zastaviť generovanie")
         else:
             self._send.setIcon(self._icon_send)
-            self._send.setEnabled(not self._busy and bool(self._input.toPlainText().strip()))
+            self._send.setEnabled(not self._busy and bool(self._input.toPlainText().strip()
+                                                          or self.attachments.attachments()))
             self._send.setToolTip("Odpoveď beží v inom chate" if self._busy else "Odoslať")
     
     

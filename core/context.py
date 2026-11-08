@@ -1,11 +1,12 @@
 from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass, replace
-from core.constants import TOKENS_PER_MESSAGE, PROMPT_RESERVE
+from core.constants import ATTACHMENT_CLOSE, ATTACHMENT_OPEN, TOKENS_PER_MESSAGE, PROMPT_RESERVE
 from core.errors import ContextOverflowError
 
 __all__ = [
     "HistoryItem",
+    "with_attachments",
     "PromptPlan",
     "fill_tokens",
     "build_prompt"
@@ -27,6 +28,17 @@ class PromptPlan:
     dropped: list[int]
     prompt_tokens: int
     budget: int
+
+
+def with_attachments(question: str, attachments: list[tuple[str, str]]) -> str:
+    """Text prílohy ide do **tej istej správy** ako otázka. Samostatná správa by rozbila
+    striedanie rolí, na ktorom Gemma trvá (§8 krok 3), a história by sa orezávala po
+    kusoch, ktoré k sebe patria."""
+    if not attachments:
+        return question
+    blocks = [f"{ATTACHMENT_OPEN.format(title=title)}\n{text}\n{ATTACHMENT_CLOSE}"
+              for title, text in attachments]
+    return "\n\n".join(blocks + ([question] if question else []))
 
 
 def fill_tokens(history: list[HistoryItem], count: Callable[[str], int]) -> tuple[list[HistoryItem], dict[int, int]]:
