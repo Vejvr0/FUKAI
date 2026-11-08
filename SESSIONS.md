@@ -616,3 +616,173 @@ Testy: `python -m ui.markdown` 24 kontrol, `t8_markdown_ui.py` 20, `t11_finish_s
 3. Na Windows neoverené: chat dlhý natoľko, že sa orezáva história (`dropped`), a plná VRAM. Tmavá téma je overená živým testom 6b.
 4. Kúsok 3b (menu ⋯ pri chate), KV odhad pre stránku Vlastnosti.
 5. V `devdata/models` zostali Gemma a Mistral (skopírované z `../llama-chatbot/models`), v `devdata/fukai.db` testovacie chaty – pokojne zmazať.
+
+---
+
+## 2026-11-07 – PC 1: menu ⋯ pri chate, monitor vyťaženia, stránka Nastavenia (krok 9, kúsky 3b, 7, 8)
+
+*Doplnené spätne 2026-11-08 z ALMANAC-u – v deň práce sa záznam do denníka nedostal.*
+
+### Hotové
+
+**Kúsok 3b – menu ⋯ pri chate** (commit `cbfa5c5`). Tlačidlo pod myšou otvorí menu s veľkosťou chatu v tokenoch, premenovaním (vstup priamo v riadku, ⋯ sa zmení na ✓) a mazaním. Riadok chatu prestal byť kreslený text a stal sa widgetom v položke, čo prinieslo tri dôsledky naraz: `itemClicked` sa už nevysiela, `::item:hover` a `:selected` prestali platiť a skracovanie názvu treba robiť ručne. Mazanie je bez potvrdenia (rozhodnutie autora), chat s bežiacou odpoveďou sa zmazať nedá.
+
+**Kúsok 7 – monitor vyťaženia** (commit `05e727f`). Klik na čip hardvéru zobrazí tri riadky: CPU, GPU a VRAM alebo RAM podľa backendu. Vzorka trvá 0,25 ms, takže beží v UI vlákne cez `QTimer`, bez workera; NVML je lenivé a po prvom zlyhaní sa už neskúša. GPU % na macOS je jediná neistá časť (`ioreg`, výsledok sa vyzdvihuje o tik neskôr, aby sa naň nečakalo) – na M2 zostáva doladiť.
+
+**Kúsok 8 – stránka Nastavenia aplikácie** (commit `a77b3d5`). Tri karty podľa aktualizovanej šablóny: tmavý vzhľad s prepnutím za behu, prepínače web a prílohy (riadia viditeľnosť tlačidiel v composeri), priečinok s modelmi a zoznam nájdených. Prepínače zapisujú hneď, v hlavičke blikne „✓ Uložené“. Vlastný `ToggleSwitch`, lebo QSS nevie animovaný pseudoelement.
+
+### Zistenia, ktoré stoja za zápis
+
+| Zistenie | Prečo bolo zradné |
+|---|---|
+| widget v položke `QListWidget` spotrebuje klik | `itemClicked` sa nevyšle – riadok potrebuje vlastný signál (tá istá pasca ako `QWidgetAction` v menu modelov) |
+| `isVisible()` je `False` pre všetko na skrytej stránke `QStackedWidget` | kontrola „tlačidlo sa skrylo“ prejde vždy, aj keď nemá – testovať cez `isHidden()` |
+| signál z riadku, ktorý sa pri obsluhe prestavia | premenovanie aj mazanie zmažú widget, ktorého signál práve beží → odložiť cez `QTimer.singleShot(0, …)` |
+| `@pyqtProperty` bez typu a so zlúčeným getterom a setterom | `TypeError` už pri importe modulu |
+| `event.type() is (A, B)` namiesto `in` | ticho – elide sa pri zmene písma neprepočítal |
+| nedostupný `models_dir` pri štarte | rozhodnuté ako fatálna chyba (mení krok 7, kde to bol len `Notice`) |
+
+### Nedoriešené do ďalšej session
+
+1. Stránka Vlastnosti (krok 11) – posledná chýbajúca stránka.
+2. Toast sa na stránke Nastavenia prekrýva s prvými prepínačmi (`TOAST_TOP` je počítaný pre hlavičku chatu).
+3. GPU % monitora na macOS doladiť na M2.
+
+
+## 2026-11-08 – PC 1: stránka Vlastnosti chatu (krok 9, kúsok 9 = pôvodný krok 11)
+
+**Stav na začiatku:** `a77b3d5`, v strome rozrobený `ui/properties_view.py` (hlavička, päta a zoznam signálov), v šablóne na OneDrive pribudla strana `propsPage`.
+
+### Hotové
+
+**Stránka Vlastnosti chatu** – posledná stránka UI. Štyri kúsky: 9a kostra, systémový prompt s presetmi a lišta Použiť; 9b karta kontextu so sliderom, popiskami krokov a odhadom pamäte; 9c expertné parametre generované zo zoznamu `PARAMS`; 9d zapojenie do okna a živý test. Podrobnosti a dôvody v ALMANAC §8 krok 9 („Kúsok 9“).
+
+**Štyri rozhodnutia autora pred kódom:** tlačidlo Použiť len zapisuje (model sa načíta pri ďalšej správe), predvolený systémový prompt zostáva prázdny, expertný režim sa medzi spusteniami nepamätá, mriežka parametrov sa pri úzkom okne preskupí na jeden stĺpec.
+
+**Dopoludnia k tomu pribudli v `core/`:** `ModelMeta.kv_cache_mb()` (vzorec overený v kúsku 5b sa konečne používa) a zverejnená `memory_pool()` – odhad „model + kontext vs voľná pamäť“ v karte kontextu je presne to, čo §7.2 žiadal pre easy režim.
+
+**Oprava na záver session** (hlásil autor po skúšaní appky): preklik na „Fúkni nový chat“ v novom chate zahadzoval rozpracované vlastnosti. Pravidlo je teraz jeden draft, s ktorým sa pracuje, kým si v novom chate; nový vzniká až pri návrate z existujúceho chatu.
+
+### Zistenia, ktoré stoja za zápis
+
+| Zistenie | Prečo bolo zradné |
+|---|---|
+| `QSizePolicy.Ignored` + `addStretch` | titulok a čip v hlavičke mali nulovú šírku a zmizli – nič nespadlo, vidno to len na snímke |
+| dlhý jednoriadkový text v karte | hint „prázdny · model použije svoj predvolený“ nafúkol minimálnu šírku stránky tak, že sa mriežka nemala ako preskupiť |
+| offscreen platforma má väčšie predvolené písmo | minimálna šírka stránky offscreen 692 px, na skutočných fontoch Windows 366 px – rozmery testovať na `windows`, offscreen len mechanizmus |
+| `Database.get_model()` nemá `size_mb` | odhad pamäte sa v appke nezobrazoval vôbec; dopĺňa ho až `ModelLibrary.models()` – odhalila snímka, nie test |
+| `self._expert` ako atribút aj ako metóda | atribút z `__init__` prekryje metódu triedy → `TypeError: 'ToggleSwitch' object is not callable` pri stavbe okna |
+| `SEED_MAX` v `QSpinBox` | 4 294 967 295 je nad 32-bitovým rozsahom Qt – seed potrebuje `QLineEdit` (tá istá rodina ako `pyqtSignal(int)` pri bajtoch) |
+| `_chats` v `MainWindow` sa obnovuje až po `turn_finished` | práve vzniknutý chat sa v čipe javil ako „Predvolené pre nový chat“ – názov radšej čítať z databázy |
+| heredoc v Git Bash (znova) | dlhý súbor so slovenským textom sa cezeň zapísať nepodarilo; písať priamo nástrojom alebo skriptom v scratchpade (§9) |
+
+### Testy
+
+`t1_props.py` 46 kontrol, `t4_ctx.py` 40, `t5_params.py` 55 (offscreen), `t7_live.py` 17 v skutočnej appke na platforme `windows` so snímkami oboch tém a minimálneho okna. Živý test dokázal celú cestu: nastavené `n_ctx=512` a `max_tokens=16` sa prejavili až v engine (`engine.n_ctx == 512`, odpoveď skončila na `length` po 16 tokenoch). Regresia: self-testy `core.settings`, `core.gguf`, `core.context`, `ui.markdown`.
+
+### Údržba ALMANAC-u a SESSIONS
+
+Krok 9 dostal na začiatku **index kúskov** (tabuľka 14 riadkov so stavom a commitmi), pribudla **§8.2 s opakujúcimi sa pascami** Qt a Pythonu, zastaraná matica wheelov v §3.1 a spracované poznatky z notebooku sa skrátili. Zoznamy preklepov z prepisu a matica testu z PC 1 sa presunuli sem do príloh – ALMANAC sa načítava do kontextu pri každom spustení, denník nie.
+
+### Nedoriešené do ďalšej session
+
+1. **Commit denníka** – kód je commitnutý (`79fc572`, k tomu autorova úprava vzhľadu `cdfe7cd`), ALMANAC a SESSIONS zostali v strome.
+2. **Krok 12 – prílohy**: prvá migrácia schémy (`SCHEMA_VERSION` na 2), tabuľka `attachments`, extrakcia textu z pdf/xlsx/docx, kontrola tokenov proti kontextu.
+3. Toast sa prekrýva s prvou kartou na stránkach Vlastnosti aj Nastavenia (`TOAST_TOP`).
+4. Počet tokenov systémového promptu je odhad `dĺžka / 4`, nie `llm.tokenize()`.
+5. Na Windows neoverené: chat dlhý natoľko, že sa orezáva história (`dropped`), a plná VRAM. GPU % monitora na macOS.
+
+
+---
+
+## Príloha – matica testu appky na PC 1 (2026-11-06, presunutá z ALMANAC-u 2026-11-08)
+
+Stav repa `41b9375`, `FUKAI_HOME=devdata`, živé okno na platforme `windows`.
+
+| Oblasť | Výsledok |
+|---|---|
+| Štart | splash *Načítavam nastavenia → Spúšťam engine → Analyzujem hardvér → Otváram databázu → Kontrolujem modely → Pripravené · CUDA*, `[INFO] llama-cpp-python: 0.3.36, GPU offload: True` |
+| Hardvér | `backend=cuda`, `n_threads=8` (z 20), `n_gpu_layers=-1`, čip **„GPU · RTX 5060 Ti · 16 GB VRAM“**, žiadne varovanie ani `Notice` |
+| Ikona | na paneli úloh biela zaoblená dlaždica FUKAI, nie Python – AppUserModelID funguje |
+| Sidebar | medzery tabov **8 / 8 px**, nič sa neprekrýva – Fusion drží rovnaký výsledok ako na Macu |
+| Sken | `.gguf` skopírovaný do `devdata\models` sa po štarte objavil v zozname + info toast (overené 3×, aj na prázdnej databáze) |
+| Import 4,1 GB | priebeh **kladný a rastúci** („8 MB z 4,1 GB“ … „4,1 GB z 4,1 GB“) – oprava `qint64` z `f2a1772` platí aj na Windows |
+| Zrušenie importu | po ✕ v `models/` **nezostal `.part`**, `importing == False`, model sa nezaregistroval |
+| Menu modelov | zaoblené rohy **bez čiernych/sivých trojuholníkov**, ✓ pri vybranom modeli, podnadpis `Q4_K_M · 4B · 2,3 GB` |
+| Kurzor v menu | **ruka nad riadkom aj nad košom**, po zatvorení menu sa vráti šípka (merané cez `GetCursorInfo`) – oprava `setOverrideCursor` z 5c-3 je správna aj tu |
+| Natívny dialóg | „Pridať .gguf model…“ otvorí dialóg *Pridať model* (trieda `#32770`), zrušenie nič neimportuje a appka beží ďalej |
+| Chat | trvalý toast načítania bez časovej osi, Stop počas načítania vypnutý, kurzor ▍ hneď po odoslaní, meta riadok `model · N tok/s · X,X s` |
+| Scroll | odrolovaný zoznam **zostane stáť**, aj keď text pribúda; po návrate dole sa znova drží spodku; koliesko nad textom posúva zoznam |
+| Zalomenie | URL bez medzier 487 px v stĺpci 740 px – bublina nepretečie |
+| Stop | obe správy ťahu zmizli, otázka späť v poli, pri prvej správe sa vrátilo uvítanie, chat **nevznikol** |
+| Prepnutie chatu | odchod počas odpovede a návrat → rozpísaná odpoveď s ▍ pokračuje a dobehne |
+| Skrátená odpoveď | `max_tokens=24` → `finish_reason=length`, meta „skrátená - dosiahnutý limit tokenov“ |
+| Mazanie | 23/23 vrátane **mmap**: načítaný model sa zmazal aj so súborom (515 ms), zmazanie iného modelu nechalo načítaný v pamäti (ďalšia správa bez reloadu), chat zostal s `model_id = NULL` a hlási „Najprv vyber model.“ |
+| Ukončenie | počas importu 188 ms (`.part` zmazaný), počas odpovede 203 ms, návratový kód 0, **žiadne `QThread: Destroyed while thread is still running`** |
+
+---
+
+## Príloha – pasce pri prepise (presunuté z ALMANAC-u 2026-11-08)
+
+Zoznamy preklepov, ktoré vznikli pri prepise kódu autorom a Claude ich pri kontrole opravil.
+V ALMANAC-u zostalo pri každom kúsku jednovetné poučenie, tu je úplný zoznam.
+
+****Pasce pri prepise** (2026-11-03, opravené pri kontrole; štyri ticho, dve pádom)**
+
+- `self._reload_chats()` volané, ale metóda sa volá `reload_chats` → `AttributeError` hneď v konštruktore okna.
+- `hills.renderer().staticMetaObject(KeepAspectRatio)` namiesto `setAspectRatioMode(...)` → `TypeError`, `staticMetaObject` je atribút každej Qt triedy, nie metóda. Doplňovanie v editore ho ponúkne medzi prvými.
+- `button(PAGE_CHAT).setCheckable(True)` namiesto `setChecked(True)` – tlačidlo už checkable je, takže po štarte **nebol zapnutý žiadny tab**. Ticho. Tá istá dvojica mien ako `isNull` / `isNull()` z kúsku 1: líšia sa pár písmenami a obe sú platné.
+- `layout.addSpacing(0)` namiesto `setSpacing(0)` – pridá prázdnu medzeru nulovej veľkosti, predvolený rozostup layoutu zostane a medzi sidebarom a panelom je pás pozadia okna. Ticho.
+- `top.setContentsMargins(16, 20, 26, 0)` – preklep, taby a tlačidlo boli užšie sprava. Ticho.
+- `__all__` s `"PASE_SETTINGS"` – `from ui.sidebar import *` padne na `AttributeError`; bežný `from ui.sidebar import Sidebar` to neodhalí. Ticho, kým to niekto neskúsi.
+
+****Pasce pri prepise** (2026-11-04, overené testom nad repom)**
+
+- `self.load_failed.emit(notices)` v úspešnej vetve `load` – UI by úspešné načítanie bralo ako chybu a `loaded` nepríde nikdy. Test skončil na `TimeoutError: loaded`.
+- `self.tokens.emit(...)` (signál je `token`) a `time.monotronic()` – oba sú `AttributeError`, ale **záchytná `except Exception` v slote ich premení na `GenerationError`**: appka nespadne, len každá odpoveď skončí toastom „Odpoveď sa nepodarilo vygenerovať“. Cena za to, že výnimka nesmie zhodiť proces – preklep v kóde vyzerá ako chyba modelu. Pravidlo: pri `failed` vždy pozrieť `detail` v logu (je tam `AttributeError: …`).
+- `def busy(self) -> None` pri `@property`, ktorá vracia `bool` – len anotácia, beží to, ale klame.
+
+****Pasce pri prepise** (2026-11-04, opravené; test odhalil len časť – zvyšok by sa prejavil až v UI)**
+
+- **`add_turn`: celé telo pod `if chat_id is None:`** vrátane `return`. Pre existujúci chat sa nezapísalo nič a metóda vrátila `None` – druhá správa v chate by ticho zmizla. Ticho.
+- `answer.tokens` (`dict` atribúty nemá → `AttributeError`, parameter je `answer_tokens`) a `(chat_id)` bez čiarky (`ProgrammingError`, §7.3) – oba v transakcii, takže by sa celý ťah rollbackol a UI ukázalo chybu úložiska.
+- Premenovanie `self._db` → `self._database` len v polovici súboru – `send()`, `_on_loaded()` a `_on_finished()` mali stále `self._db` → `AttributeError` pri prvom odoslaní. Pri premenovaní atribútu hľadať všetky výskyty (`grep`), nie len tie, ktoré sú na očiach.
+- `loading_finished = pyqtSignal(str)`, ale `emit()` bez argumentu → `TypeError` v slote služby; signál nemá argument.
+- `open_chat`: `self._chat_id = self.chat_id` (vlastnosť vracia **starú** hodnotu, takže sa nezmenilo nič – ďalšia správa by išla do predchádzajúceho chatu) a `get_chat()` namiesto `get_messages()` v `chat_opened`. Ticho.
+- `__all__` s `"TITLE_WORD"` – rovnaká pasca ako `PASE_SETTINGS` v kúsku 3.
+
+****Pasce pri prepise** (2026-11-04, opravené; päť by spadlo hneď pri štarte okna, dve ticho)**
+
+- `self._text = QLabel` bez `()` – do atribútu sa uloží trieda, `setObjectName` na nej padne (`TypeError: unbound method`). Tá istá pasca ako `SplashScreen` / `Database` v kúsku 1.
+- `def _round_buttons` vs volanie `self._round_button(...)` → `AttributeError`.
+- `self._shadow.setGraphicsEffect(self._shadow)` – efekt sa nastavuje **widgetu** (`self.setGraphicsEffect`), nie efektu samému sebe → `AttributeError`.
+- `self._set_theme(...)` – metóda je verejná `set_theme` → `AttributeError`.
+- `self._pill.setEnabled` bez volania – výraz bez účinku, tlačidlo modelu by **počas generovania zostalo zapnuté**. Ticho.
+- `self._send.setIcon(not busy and …)` namiesto `setEnabled(...)` → `TypeError` pri každom písaní (bool nie je `QIcon`). Doplňovanie v editore ponúka `setIcon` hneď pod predchádzajúcim riadkom.
+- V `ModelLibrary` zostal nepoužitý signál premenovaný na `model_changed` – rovnaké meno ako signál controllera s iným významom; odstránený (zoznam sa číta pri otvorení menu, signál netreba).
+
+****Pasce pri prepise** (2026-11-05, opravené; jedna by zhodila štart, tri ticho)**
+
+- **`Database.set_model(model_id, meta)`** – rovnaké meno ako existujúca `set_model(chat_id, model_id, properties)` (výmena modelu v chate). Python pri dvoch metódach s rovnakým menom ticho nechá **tú neskoršiu**, takže `refresh_meta` volal metódu chatu s dvomi argumentmi → `TypeError`. Nie je to `FukaiError`, štart ju nezachytí a appka spadne – ale len keď je v databáze model s prázdnou `meta`, preto sa to pri teste s novou databázou neukázalo. Pri pomenovaní novej metódy hľadať (`grep "def názov"`), či už neexistuje.
+- `self._f.read()` namiesto `self._f.read` v rýchlej slučke `_skip_array` – so zátvorkami **načíta celý zvyšok súboru** (2,3 GB) a potom `read(8)` padne, lebo `bytes` nejde volať.
+- `template = header.get(META_VALUE_LENGTH) or head_dim_k` – do premennej šlo číslo, `has_chat_template` bolo vždy `False` a import by odmietol každý model. Ticho.
+- `size_lable` v `ModelMeta` aj v `gguf.py` – navzájom to sedelo, ale menu číta `size_label`, takže „4B“ by sa nezobrazilo nikdy. Ticho. Preklep v kľúči slovníka/poli dataclassu chyba nevyhodí – presne dôvod, prečo sú kľúče hlavičky konštanty.
+- `f"…"` bez premennej – kozmetika.
+
+****Pasce pri prepise** (2026-11-05, opravené; jedna by zhodila appku pri otvorení menu modelov, dve ticho)**
+
+- **`add.trigger.connect(lambda: QTimer.singleShot(0, self.add_model_requested.emit()))`** – dve chyby v jednom riadku. `trigger` je metóda (spustí akciu), signál je `triggered` → `AttributeError: 'builtin_function_or_method' object has no attribute 'connect'` hneď pri stavbe menu. Výnimka v slote kliknutia zhodí celý proces, takže **appka spadne pri každom otvorení menu modelov**, nielen pri importe. A `emit()` so zátvorkami by signál vyslal hneď (vnútri menu) a `singleShot` by dostal `None`. Rovnaká dvojica ako `isNull` / `isNull()` (kúsok 1) a `read` / `read()` (5b): do odloženého volania patrí **funkcia bez zátvoriek**. Test okna to neodhalil – kontroloval len `isEnabled()` akcie, menu neotvoril; doplnený `add_action.py`, ktorý chybu zachytí (overené na kópii s pôvodným riadkom).
+- Chýbajúce `library.shutdown()` v `Application.shutdown()` – zatvorenie appky počas importu by skončilo `QThread: Destroyed while thread is still running` a v knižnici by zostal `.part`. Ticho pri každom inom zatvorení.
+- Chýbajúce QSS `QProgressBar#toastProgress` – pruh priebehu by mal predvolený vzhľad Fusion (vysoký, s rámom), výška toastu nesedí. Ticho.
+
+****Pasce pri prepise** (2026-11-06, opravené; tri by spadli pri prvom použití, štyri ticho)**
+
+- **Chýbajúci riadok `controller.turn_started.connect(composer.begin_turn)`** v `main_window.py` – pri pridávaní nového `connect` pre `ChatView` zmizol susedný starý. Composer by po odoslaní nevyprázdnil pole a neprepol Odoslať na Stop – Stop by sa nedal stlačiť. Ticho; pri úprave bloku signálov porovnať `git diff`, nie len to, čo pribudlo.
+- `self._layout.addWidget(self, self._composer_column())` → `TypeError` pri štarte okna (druhý argument `addWidget` je stretch, nie widget).
+- `def inspect(...)` namiesto `insert` – `_flush` volá `self.text.insert(...)` → `AttributeError` pri prvom tokene. Výnimka v slote časovača zhodí proces.
+- `self._fit(width, shrink)` v `changeEvent` – `_fit` je n-tica s posledným rozmerom, metóda je `fit` → `TypeError` pri prvej zmene písma (zobrazenie okna). Atribút a metóda líšiace sa len podčiarkovníkom.
+- `self.remove(...)` namiesto `self._remove(...)` v `_clear` → `AttributeError` pri otvorení chatu s neprázdnym zoznamom.
+- `setObjectName("welcomText")` – QSS `QLabel#welcomeText` sa neuplatní, veta uvítania má bežné malé písmo. Ticho.
+- `__all__` bez `answer_meta` – rovnaká pasca ako `PASE_SETTINGS` (kúsok 3). Ticho.
+- Kozmeticky: `_UserMessages` vrátené na `_UserMessage` (jedna správa, ako `_AnswerMessage`).
+
