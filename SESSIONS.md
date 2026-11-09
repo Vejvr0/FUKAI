@@ -843,3 +843,35 @@ V ALMANAC-u zostalo pri každom kúsku jednovetné poučenie, tu je úplný zozn
 2. **Krok 13 – web rozšírenie** (posledná funkcia z §2).
 3. Otvorené body z ALMANAC §8 krok 9 a krok 12 (toast cez prvú kartu, neoverené na macOS, CUDA bez Toolkitu, drobnosti).
 
+## 2026-11-09 (večer) – MacBook: web rozšírenie, kúsky 13a–13c
+
+**Stav na začiatku:** `80965c8` (oprava menu ⋯), rozhodnutia autora ku kroku 13 (dopyt = otázka, text stránok len v ťahu, zlyhanie → toast, `sk-sk`).
+
+### Hotové
+
+**13a – `extensions/web_search.py`** (Claude navrhol, autor prepísal, Claude opravil). Hľadanie cez `ddgs`, 5 stránok sťahovaných naraz s termínom 4 s, výber 3 zdrojov, úryvok namiesto nestiahnutej stránky. Pin `ddgs==9.16.1` + `primp==2.0.1` (9.7.1 s `primp` 2.x padal).
+
+**13b – `ui/web_service.py` + controller** (Claude navrhol, autor prepísal, Claude opravil). Hľadanie vo vlastnom vlákne súbežne s načítaním modelu, Stop počas hľadania vráti ťah, zlyhanie → toast a odpoveď bez webu. `t16/web_flow.py` 29/29.
+
+**13c – zdroje do promptu** (varianta A – rozhodnutie autora; Claude napísal aj prepísal do repa). Zdroje majú prednosť pred staršou históriou, najmenej 60 % voľného miesta, viac keď ho história nepotrebuje. Gemma 3 4B pri predvolenom kontexte 4096: prompt 2891 / 3008 tokenov, citácie `[1]`, `[2]`.
+
+### Opravené chyby (a prečo stáli za zmienku)
+
+| Chyba | Prečo bola zradná |
+|---|---|
+| `response.code` namiesto `response.status_code` | `except Exception` vo `fetch_text` z nej spravil „stránka bez textu“ – každý zdroj bol len úryvok, offline testy to nevideli |
+| metódy `WebService` odsadené do `__init__` | import aj vytvorenie služby prešli; padlo by to až pri prvej správe s webom a pri **každom** zatvorení appky |
+| pole `_Turn.source`, zápis `turn.sources` | dataclass nový atribút prijme ticho; pri zlyhanom hľadaní by 13c spadlo |
+| `stop()` s `else` + poistka bez `_loaded = None` | Stop počas načítania by nechal `_loaded` ukazovať na starý model a ďalšia správa by preskočila reload |
+| self-test `web_search` hlásil `exit 0` aj so ZLE | `log.clear()` po offline časti zahodil výsledky (chyba Clauda) |
+| User-Agent bez adresy | Wikipédia vracala 403 – najčastejší zdroj bol vždy len úryvok |
+| pokyn citovať pred zdrojmi | Gemma pri dlhej odpovedi necitovala vôbec; za zdrojmi cituje |
+| **odrezaný ALMANAC** (chyba Clauda) | skript vložil pascu 13a a nepripojil zvyšok súboru – zmizol krok 14, §8.1, §8.2, §9, §10. Obnovené zo stavu na začiatku session, overené porovnaním |
+
+### Nedoriešené do ďalšej session
+
+1. **Commit** 13a–13c + ALMANAC + SESSIONS (autor).
+2. **13d** – stav hľadania v bubline, čip „Web“, klikateľné zdroje pod odpoveďou, meta „· N zdroje“, uloženie `content.data.web` (len zdroje z `web_used`).
+3. **13e** – prepínač Web → `properties.chat.web_search` (sticky, draft v novom chate); dovtedy sa web dá zapnúť len cez vlastnosti v kóde, v appke ho tlačidlo ešte nezapne.
+4. Overenie opravy menu ⋯ v živom okne na PC 1 (z rannej session).
+

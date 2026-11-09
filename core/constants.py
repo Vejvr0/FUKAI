@@ -78,3 +78,22 @@ BINARY_PROBE_BYTES = 8192
 ATTACHMENT_OPEN = "--- Príloha: {title} ---"
 ATTACHMENT_CLOSE = "--- koniec prílohy ---"
 ATTACHMENT_CUT_NOTE = "\n\n[Príloha bola orezaná, do kontextu sa zvyšok nezmestil.]"
+WEB_REGION = "sk-sk"
+WEB_SAFESEARCH = "moderate"
+WEB_MAX_RESULTS = 5
+WEB_PAGES = 3
+WEB_TIMEOUT_S = 6
+WEB_PAGE_TIMEOUT_S = (3, 4)
+WEB_FETCH_DEADLINE_S = 4.0
+WEB_MIN_TEXT_CHARS = 300
+WEB_MAX_PAGE_BYTES = 2 * 1024 * 1024
+WEB_SOURCE_CHARS = 6000
+WEB_USER_AGENT = f"Mozilla/5.0 (compatible; {APP_NAME}/{APP_VERSION}; +https://github.com/Vejvr0/FUKAI)"   # Wikipédia bez adresy vráti 403
+WEB_CONTEXT_SHARE = 0.6                 # najmenej toľko voľného miesta po otázke dostanú zdroje
+WEB_MIN_SOURCE_TOKENS = 80              # menší diel nemá zmysel - zdroj sa radšej vynechá
+WEB_OPEN = "--- Výsledky z webu ---"
+WEB_INSTRUCTION = ("Na otázku odpovedz s pomocou týchto zdrojov. Keď z niektorého čerpáš, uveď jeho "
+                   "číslo v hranatých zátvorkách, napríklad [1]. Ak odpoveď v zdrojoch nie je, povedz to "
+                   "a odpovedz z vlastných znalostí.")
+WEB_SOURCE_HEAD = "[{n}] {title}\n{url}"
+WEB_CLOSE = "--- koniec výsledkov z webu ---"

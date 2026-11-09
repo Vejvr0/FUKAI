@@ -16,6 +16,7 @@ from ui.chat_controller import ChatController
 from ui.model_library import ModelLibrary
 from ui.settings_store import SettingsStore
 from ui.llm_service import LlmService
+from ui.web_service import WebService
 from ui.attachments import AttachmentService
 from ui.constants import ICNS, ICO, SPLASH_TIME, WINDOWS_APP_ID
 from ui.main_window import MainWindow
@@ -49,6 +50,7 @@ class Application(QApplication):
         self.hardware: HardwareProfile | None = None
         self.database: Database | None = None
         self.llm: LlmService | None = None
+        self.web: WebService | None = None
         self.attachments: AttachmentService | None = None
         self.chat: ChatController | None = None
         self.library: ModelLibrary | None = None
@@ -75,7 +77,8 @@ class Application(QApplication):
         
         self.llm = LlmService()
         self.setStyleSheet(stylesheet(self.settings.current.theme))
-        self.chat = ChatController(self.settings, self.hardware, self.database, self.llm)
+        self.web = WebService()
+        self.chat = ChatController(self.settings, self.hardware, self.database, self.llm, self.web)
         self.monitor = UsageMonitor(self.hardware)
         self.attachments = AttachmentService()
         self.window = MainWindow(self.settings, self.hardware, self.database, self.chat, self.library, self.monitor, self.attachments)
@@ -185,6 +188,9 @@ class Application(QApplication):
         if self.attachments is not None:
             self.attachments.shutdown()
             self.attachments = None
+        if self.web is not None:
+            self.web.shutdown()
+            self.web = None
         if self.database is not None:
             self.database.close()
             self.database = None

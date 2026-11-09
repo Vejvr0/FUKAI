@@ -35,7 +35,7 @@ Zdieľaná pamäť projektu pre Claude Code na všetkých strojoch (Mac aj PC). 
 
 Závislosti sú pinované v **troch** súboroch – `llama-cpp-python` je zámerne mimo hlavného, lebo jediný je platformovo aj GPU-architektúrne špecifický:
 
-- `requirements.txt` – spoločné pre oba OS (PyQt6, psutil, platformdirs, nvidia-ml-py, Pygments + závislosti pre prílohy a web, ktoré prídu v krokoch 5–6).
+- `requirements.txt` – spoločné pre oba OS (PyQt6, psutil, platformdirs, nvidia-ml-py, Pygments, knižnice príloh – krok 12 – a webu – krok 13).
 - `requirements-llama-win-cuda.txt` – Windows CUDA wheel, **jeden pre všetky NVIDIA karty**.
 - `requirements-llama-mac.txt` – macOS Apple Silicon, Metal wheel.
 
@@ -139,26 +139,56 @@ V `../llama-chatbot/` je starší prototyp toho istého nápadu (PyQt6 + llama-c
 
 ## 6. Architektúra
 
+Stav 2026-11-09 (aktualizované podľa repa; `web_search.py` pribudne v kroku 13). Hranice: `core/`, `storage/` a `extensions/` nevedia o Qt; `ui/` služby (`*_service`, `ChatController`, `ModelLibrary`) nevedia o widgetoch; widgety nevedia o databáze – prepája ich `MainWindow`.
+
 ```
 FUKAI/
-├── main.py                 # vstupný bod
-├── core/
-│   ├── llm_engine.py       # načítanie modelu, streaming, stop
-│   ├── hardware.py         # detekcia CPU/RAM/GPU, odporúčané parametre
-│   ├── context.py          # počítanie tokenov, orezávanie histórie
-│   └── settings.py         # LoadParams / SamplingParams (dataclasses)
+├── main.py                    # vstupný bod → ui.application.Application
+├── core/                      # bez Qt
+│   ├── constants.py           # hranice parametrov, kľúče metadát .gguf, cesty k vars/
+│   ├── errors.py              # FukaiError (message / hint / detail), Notice, Severity
+│   ├── paths.py               # app_dir() (+ FUKAI_HOME), settings.json, fukai.db, models/
+│   ├── app_settings.py        # AppSettings ↔ settings.json (atomický zápis)
+│   ├── settings.py            # LoadParams / SamplingParams / ChatParams / ChatProperties, ModelMeta
+│   ├── hardware.py            # detekcia CPU/RAM/GPU, kontroly pri štarte, free_ram_mb()
+│   ├── monitor.py             # vzorky vyťaženia CPU/GPU/pamäte (kúsok 7)
+│   ├── gguf.py                # čítač hlavičky .gguf bez načítania modelu, check_usable()
+│   ├── llm_engine.py          # probe_engine(), load/unload, stream, stop, tokenize
+│   └── context.py             # počítanie tokenov, orezávanie histórie, prílohy do promptu
 ├── storage/
-│   └── database.py         # SQLite
-├── extensions/
-│   ├── file_parser.py      # pdf, xlsx, docx, txt…
-│   └── web_search.py       # ddgs + trafilatura
+│   ├── constants.py           # schéma (v2), pragmy, SCHEMA_VERSION
+│   └── database.py            # Database: models, chats, content, properties, attachments
+├── extensions/                # bez Qt, vracajú len doménové chyby
+│   ├── file_parser.py         # txt/md/csv/json/kód, PDF, xlsx, docx → text
+│   └── web_search.py          # krok 13: ddgs + trafilatura
 ├── ui/
-│   ├── main_window.py
-│   ├── chat_view.py
-│   ├── sidebar.py
-│   ├── settings_panel.py
-│   └── workers.py          # QThread workery
-├── assets/                 # logo, ikony
+│   ├── application.py         # QApplication, štart (splash), vlastní služby, shutdown()
+│   ├── splash.py
+│   ├── main_window.py         # poskladanie widgetov a prepojenie signálov
+│   ├── chat_controller.py     # tok správy, zápis ťahu, vrátenie pri Stope
+│   ├── llm_service.py         # jediné vlákno pre model (LlmWorker)
+│   ├── workers.py             # LlmWorker, ImportWorker, worker príloh
+│   ├── attachments.py         # AttachmentService – extrakcia vo vlastnom vlákne
+│   ├── model_library.py       # sken, import, mazanie modelov
+│   ├── settings_store.py      # jediná živá kópia AppSettings
+│   ├── sidebar.py             # taby, zoznam chatov, menu ⋯
+│   ├── chat_view.py           # hlavička, uvítanie, zoznam správ + composer
+│   ├── message_list.py        # bubliny, odpoveď po častiach, streamovanie
+│   ├── markdown.py            # markdown → časti (text, blok kódu, tabuľka), pygments
+│   ├── composer.py            # vstup, prílohy, web, výber modelu, Odoslať/Stop
+│   ├── attachment_bar.py      # čipy príloh
+│   ├── properties_view.py     # stránka Vlastnosti chatu
+│   ├── settings_view.py       # stránka Nastavenia aplikácie
+│   ├── usage_panel.py         # monitor vyťaženia
+│   ├── model_info.py          # modal s metadátami modelu
+│   ├── text_preview.py        # náhľad textu prílohy
+│   ├── toast.py               # Toast, ToastHost
+│   ├── toggle_switch.py
+│   ├── icons.py, style.py     # SVG ikony s farbou témy, THEMES + QSS šablóna
+│   ├── formatting.py          # texty čísel, veľkostí, tokenov, meta riadok
+│   └── constants.py
+├── vars/hw.json               # minimálne OS, mapa compute capability
+├── assets/                    # logo, ikony, splash, SVG
 ├── requirements.txt
 ├── requirements-llama-win-cuda.txt
 └── requirements-llama-mac.txt
@@ -180,7 +210,7 @@ Plochá štruktúra (nie `src/fukai/`) – je to aplikácia, nie knižnica, a je
 - **Súbory:** `pypdf` (MIT; PyMuPDF je rýchlejší, ale AGPL), `openpyxl`/`pandas` → markdown tabuľka, `python-docx`. OCR mimo rozsahu.
 - **Úložisko:** dve miesta, nie jedno – pozri §7.1.
 - **Render odpovedí:** `QTextBrowser.setMarkdown()` + `pygments` na kód. Bez QWebEngine (veľký build).
-- **Distribúcia:** PyInstaller, zvlášť build pre Windows a Mac. Na Windows potom Inno Setup, na Macu `.dmg`/`.pkg`. Podrobnosti a nevyriešené body v §10.
+- **Distribúcia:** PyInstaller, zvlášť build pre Windows a Mac. Na Windows **vlastná inštalačka v C#** (rozhodnutie autora 2026-11-09, namiesto Inno Setup), na Macu `.dmg`/`.pkg`. Podrobnosti a nevyriešené body v §10.
 
 ### 7.1 Nastavenia a úložisko – ROZHODNUTÉ 2026-10-28
 
@@ -191,7 +221,7 @@ Hranica: **do JSON-u ide to, čo treba vedieť *predtým*, než sa otvorí datab
 | | kde | čo |
 |---|---|---|
 | Nastavenia aplikácie | `settings.json` v `app_dir()` | `models_dir`, povoliť prílohy, povoliť web search, téma, posledný model, `version` pre migrácie |
-| Dáta | `fukai.db` (SQLite) v `app_dir()` | `models`, `chats`, `content` (správy), `properties` (nastavenia chatu); `attachments` pribudnú v kroku 10 |
+| Dáta | `fukai.db` (SQLite) v `app_dir()` | `models`, `chats`, `content` (správy), `properties` (nastavenia chatu), `attachments` (text príloh, od schémy v2 – krok 12) |
 | Pevné dáta | `vars/` v repe | `hw.json` – minimálne verzie OS, mapa compute capability |
 
 **Jeden adresár, dve úložiská** – rozhodnuté 2026-10-28 po overení `platformdirs` 4.9.6. `app_dir()` je v `core/paths.py` a je to `platformdirs.user_data_dir("FUKAI", appauthor=False)`, na PC 1 teda `C:\Users\<user>\AppData\Local\FUKAI`. Obsahuje `settings.json`, `fukai.db` a predvolene aj `models/`.
@@ -840,8 +870,8 @@ Platí teda pravidlo: **vnútri `transaction()` sa volá `conn.execute()`, nikdy
    - ✅ **Pád pri mazaní chatu počas generovania – príčina nájdená a opravená 2026-11-09 na Macu** (hlásil autor 2026-11-08 na PC 1; **čaká na overenie v živom okne na PC 1**, necommitnuté). Nebol to controller ani streamovanie – päť scenárov mazania počas odpovede so skutočným Qwenom (zobrazený/iný/nový chat, odchod a návrat) prešlo bez pádu.
      **Príčina (reprodukovaná):** `Sidebar._open_chat_menu` si drží `row` počas `menu.exec()` a po návrate volá `row.set_menu_open(False)`. „Vymazať“ išlo cez `QTimer.singleShot(0, …)` – keď vnorená slučka menu stihne spracovať tento časovač aj odložené mazanie riadkov po `reload_chats()` (`QListWidget.clear()` → `deleteLater`), `exec()` sa vráti na **zmazaný** riadok → `RuntimeError: wrapped C/C++ object … has been deleted` v slote → pád procesu (§8.2). Počas generovania je v slučke viac udalostí, preto sa to stávalo práve vtedy. To isté nastane, keď počas otvoreného menu dobehne odpoveď (`chats_changed` → prestavba zoznamu).
      **Oprava (`ui/sidebar.py`):** akcia sa berie z návratovej hodnoty `menu.exec()` a vykoná sa **až po zatvorení menu**; riadok sa po návrate hľadá znova v `self._rows` podľa `chat_id` (zmazaný chat už riadok nemá, prestavaný zoznam má nový). Premenovanie ide cez `_begin_edit(chat_id)`, nie cez viazanú metódu starého riadku. Test `t15/menu_crash.py` (scratchpad na Macu): prestavba zoznamu počas menu, prestavba + Vymazať, Vymazať, Premenovať – všetko OK; na pôvodnom kóde scenár s prestavbou padá presne touto chybou.
-   - **Toast sa prekrýva s prvou kartou** na stránkach Vlastnosti aj Nastavenia – `TOAST_TOP` je počítaný pre hlavičku chatu.
-   - **Neoverené na Windows:** chat dlhý natoľko, že sa začne orezávať história (`dropped`), a správanie pri plnej VRAM. Na macOS: GPU % v monitore (`ioreg`) a všetko z kúskov 7–9, ktoré vznikli na PC.
+   - **Toast sa prekrýva s prvou kartou** na stránkach Vlastnosti aj Nastavenia – `TOAST_TOP` je počítaný pre hlavičku chatu. **Nerieši sa** (rozhodnutie autora 2026-11-09).
+   - **Neoverené – overí sa na záver** (rozhodnutie autora 2026-11-09): na Windows chat dlhý natoľko, že sa začne orezávať história (`dropped`), a správanie pri plnej VRAM; na macOS GPU % v monitore (`ioreg`) a všetko z kúskov 7–12, ktoré vznikli na PC.
    - **Drobnosti:** počet tokenov systémového promptu je odhad `dĺžka / 4`, nie `llm.tokenize()`; kontextové menu textu je po anglicky (Qt bez prekladov); výber textu myšou cez viac častí odpovede nejde (každá časť je vlastný `QTextBrowser`).
    - **Ponúknuté, nerozhodnuté:** `sys.excepthook` → fatálny dialóg pri neodchytenej výnimke; generátor ikon do repa (`tools/`).
 10. [x] **Čítač hlavičky `.gguf`, ktorý nenačíta model** – *robený v kroku 9 ako kúsok 5b (vyššie), hotový a commitnutý 2026-11-05 (`44fc7e6`).* Prerekvizita importu modelu. *Overené 2026-10-30:* `n_layers` aj `n_ctx_train` v `llm_engine.py` idú cez `self._llm._model.model`, teda sú dostupné **až po `load()`**. Popup so zoznamom modelov a rozsahy slidrov ich ale potrebujú **pred** načítaním, preto sa čítajú raz pri importe a cachujú v `models.meta` (§7.1). Pri vytváraní chatu to nevadí – model vtedy už beží.
@@ -861,8 +891,69 @@ Platí teda pravidlo: **vnútri `transaction()` sa volá `conn.execute()`, nikdy
     Pasce, ktoré to stálo: chýbajúci `setObjectName("chip")` (QSS sa nechytilo, čip bol bez pozadia aj zaoblenia); `icon("×")` namiesto `icon("x")` → `FileNotFoundError` pri každom čipe; `chip._reflow()` namiesto `self._reflow()` → výnimka v slote zhodila proces; `self._chips.get()` namiesto `.pop()` nechal zmazaný widget v slovníku; `_reflow(force=True)` v `resizeEvent` sa v composeri zacyklil; **SVG ✕ pri 10 px je kocka** (ťah 0,8 px, guľaté konce zmiznú) – krížik je preto text, ako v dialógoch.
     **Kúsok 12e (2026-11-09):** čipy príloh sú nad bublinou otázky - v rozpísanom ťahu bez možnosti kliknúť, v histórii klikateľné (náhľad textu). **Správa bez textu bublinu nedostane vôbec**, zostanú len čipy; prázdna bublina vyzerala ako chyba. Text príloh sa pri otvorení chatu stále nenačítava (§12a), náhľad si ho dotiahne až pri kliknutí cez `Database.get_attachment(id)`. `ChipName` (skracovanie názvu v strede) je spoločná pre composer aj históriu - preto sa z `_Name` stala verejná trieda v `ui/attachment_bar.py`. `turn_started` nesie okrem otázky aj zoznam názvov príloh, takže čipy vidno hneď pri odoslaní; `Composer.begin_turn` má stále jeden parameter, lebo Qt slotu s menej parametrami nadbytočné zahodí.
     Neoverené: správanie na macOS, veľmi veľké PDF (stovky strán) a súbeh importu modelu s extrakciou prílohy.
-13. [ ] Web rozšírenie
-14. [ ] Doladenie: témy, markdown, ikony, PyInstaller
+13. [ ] **Web rozšírenie** – návrh 2026-11-09, rozhodnutia autora v poslednom bode.
+    - **Tok:** odoslanie so zapnutým Web → **súbežne** vyhľadávanie (vlastné vlákno) a načítanie modelu, ak treba → `ddgs` vráti 5 výsledkov → 3 najlepšie stránky sa stiahnu paralelne (`requests`, timeout, strop veľkosti) a `trafilatura` z nich vytiahne text, zlyhaná stránka → úryvok z vyhľadávača → zdroje sa orežú na rozpočet kontextu → generovanie. Model si web nevolá sám (§7).
+    - **Moduly:** `extensions/web_search.py` (bez Qt, `search` / `fetch_text` / `gather(query, cancel)`, chyby len `WebSearchError`), `WebService` vo vlastnom vlákne (vzor `AttachmentService`), `core/context.with_web()` – zdroje do **tej istej správy** ako otázka (striedanie rolí, ako prílohy) + inštrukcia citovať `[1]`.
+    - **Stop počas hľadania** zruší hľadanie aj ťah (`threading.Event`, ako import). **Prepínač** zapisuje `properties.chat.web_search` (sticky, §7.2), v novom chate do draftu.
+    - **Uloženie:** odpoveď `content.data.web = {query, sources: [{title, url}]}`, otázka `data.web = true` (čip „Web“ nad bublinou); bez zmeny schémy.
+    - **UI:** stav v bubline odpovede („Hľadám na webe…“, „Čítam 3 stránky…“), pod odpoveďou klikateľné zdroje (`QDesktopServices.openUrl`), v meta riadku „· 3 zdroje“.
+    - **Rozhodnutia autora (2026-11-09):**
+      - **Dopyt = otázka tak, ako je.** Zamietnuté: prepis modelom (druhé generovanie, malé modely nespoľahlivé) a otázka + názov chatu. Daň: doplňujúca otázka bez kontextu („a koľko má študentov?“) nájde horšie výsledky.
+      - **Text stránok žije len v danom ťahu** – do promptu ide pri tejto odpovedi, uloží sa iba dopyt a zoznam zdrojov. Zamietnuté: ukladať ako prílohy (história by rýchlo zjedla kontext; odpoveď už obsahuje podstatné aj s citáciami).
+      - **Zlyhanie hľadania → toast a odpoveď bez webu.** `WebSearchError` už má `severity=INFO` a správu „Odpoveď je bez informácií z internetu…“. Zamietnuté: zrušiť ťah.
+      - **Región `sk-sk`.**
+    **Zistené 2026-11-09 na Macu: pinnutý `ddgs==9.7.1` nefunguje** – `primp.BuilderError: Invalid impersonate: "chrome_123"`. `ddgs` 9.7.1 nemá `primp` pripnutý, pip doň nainštaloval `primp` 2.0.1, ktorý staré profily prehliadača zrušil. `ddgs` **9.16.1** s `primp` 2.0.1 funguje (overené v oddelenom priečinku, `.venv` nezmenený): 5 výsledkov za 1,7 s, kľúče `title` / `href` / `body`; `trafilatura` 2.0.0 vytiahne text stránky za ~0,6 s. Pri zmene pinu pripnúť aj `primp`, inak sa to zopakuje.
+    **Kúsky:**
+
+    | Kúsok | Čo | Stav |
+    |---|---|---|
+    | 13a | `extensions/web_search.py` – hľadanie, stiahnutie, výber zdrojov; konštanty `WEB_*`; pin `ddgs` + `primp` | ✅ autor prepísal, Claude opravil 1 tichú chybu |
+    | 13b | `WebService` vo vlastnom vlákne + controller: hľadanie súbežne s načítaním modelu, Stop počas hľadania, zlyhanie → toast a odpoveď bez webu | ✅ autor prepísal, Claude opravil 4 chyby |
+    | 13c | `core/context.with_web()` – zdroje a inštrukcia citovať do správy s otázkou, orezanie na rozpočet kontextu | ✅ Claude napísal aj prepísal do repa (na žiadosť autora) |
+    | 13d | UI: stav v bubline, čip „Web“, zdroje pod odpoveďou, meta „· N zdroje“, uloženie do `content.data` | |
+    | 13e | prepínač Web → `properties.chat.web_search` (sticky, draft v novom chate) | |
+
+    **Kúsok 13a – `extensions/web_search.py`** (2026-11-09, Claude napísal a otestoval v scratchpade `run13`, autor prepísal, Claude opravil chyby, self-test prešiel nad repom). Self-test `python -m extensions.web_search [dopyt]`: 12 offline kontrol (výber zdrojov, orezanie, termín sťahovania, zrušenie, chyby) + živý dopyt. Rozhranie: `search(query) -> list[SearchHit]`, `fetch_text(url, cancel) -> str | None`, `gather(query, *, cancel, progress) -> list[WebSource]`, `cut_text(text, limit)`. Rozhodnutia:
+    - **Von ide len `WebSearchError`**: výpadok, obmedzenie DuckDuckGo aj **žiadny výsledok** (odpoveď by bola bez webu rovnako). `ddgs` sa importuje lenivo vo funkcii – appka sa spustí aj bez knižnice.
+    - **Stránka, ktorá sa nestiahne, nie je chyba** – `fetch_text` nikdy nevyhodí výnimku, vráti `None` a namiesto textu sa použije úryvok z vyhľadávača (`WebSource.full = False`). Sťahuje sa len `text/html`, najviac 2 MB.
+    - **Sťahuje sa všetkých 5 výsledkov naraz, vyberú sa 3** – prednosť majú stránky s textom v poradí vyhľadávača, chýbajúce sa doplnia úryvkami. Pomalá alebo prázdna stránka tak nahradí ďalšia v poradí.
+    - **Na pomalé stránky sa nečaká:** spoločný termín `WEB_FETCH_DEADLINE_S` = 4 s a skorší koniec, keď prvé 3 v poradí majú text. Prvá verzia čakala na najpomalšiu stránku (timeout 6 s) – živý dopyt trval 7,7 s; teraz 3,8–5,6 s (hľadanie ~1,5–2 s). Bežiace stiahnutia po termíne dobehnú v pozadí (`shutdown(wait=False)`), výsledok sa zahodí.
+    - **Text pod 300 znakov nie je obsah stránky** (stránka „Kontakt“, cookie lišta – živý test vrátil zdroj so 114 znakmi) → počíta sa ako bez textu.
+    - **Zdroj najviac 6000 znakov** (~1500 tokenov), skrátený na konci odseku alebo vety; presné orezanie na kontext je kúsok 13c.
+    - **User-Agent `Mozilla/5.0 (compatible; FUKAI/1.0; +https://github.com/Vejvr0/FUKAI)`** – poctivé meno appky, nie prestrojenie za prehliadač. *Adresa doplnená v kúsku 13c:* bez nej Wikipédia vracia **403** (pravidlá Wikimedie chcú v User-Agente kontakt), takže najčastejší zdroj encyklopedických otázok bol vždy len úryvok. S adresou 200 na Wikipédii aj ostatných skúšaných stránkach; sme.sk odmieta oba tvary (blokuje všetko okrem prehliadača) → úryvok.
+    - **Zrušenie** (`threading.Event`): kontroluje sa po hľadaní, počas čítania stránky a v čakaní na stránky; zrušené → `[]`.
+    - **Pin:** `ddgs==9.16.1` + **`primp==2.0.1`** v `requirements.txt` (pôvodný `ddgs==9.7.1` s `primp` 2.x nefunguje, viď vyššie).
+    - **Pasca pri prepise:** `response.code` namiesto `response.status_code` – `AttributeError` zachytil `except Exception` vo `fetch_text`, takže **každá stránka ticho skončila ako úryvok** a odpoveď by mala len 1–2 vety z vyhľadávača. Offline testy to neodhalili (sťahovanie nahrádzajú falošné funkcie), živý test áno – preto kontroluje aj „aspoň jeden zdroj s textom stránky“. Rovnaká rodina ako `except Exception` v slote workera (§8.2): široký `except` premení preklep na „normálny“ výsledok.
+    - DuckDuckGo pri opakovaných dopytoch občas vráti `DDGSException: No results found` aj na dopyt, ktorý o chvíľu predtým fungoval (pravdepodobne obmedzenie dopytov). Hlási sa ako „vyhľadávanie nefungovalo“, teda podľa rozhodnutia toast a odpoveď bez webu.
+    **Kúsok 13b – `WebService` + controller** (2026-11-09, Claude napísal a otestoval v scratchpade `run13b`, autor prepísal, Claude opravil 4 chyby, testy prešli nad repom). Súbory: nový `ui/web_service.py` (`WebService`), `ui/workers.py` (`WebRequest`, `WebWorker`), `ui/chat_controller.py`, `ui/application.py`. Test `t16/web_flow.py` 29 kontrol so skutočným Qwenom a falošným hľadaním (11 scenárov), `t16/live_service.py` so skutočným hľadaním (3,2 s, 3 zdroje s textom). Rozhodnutia:
+    - **Vzor `AttachmentService`:** jeden trvalý `QThread`, `search(query) -> job_id`, signály `progress(id, text)`, `ready(id, zdroje)`, `failed(id, WebSearchError)`. Výnimka v `gather` mimo `FukaiError` (preklep) sa mení na `WebSearchError` s detailom – výnimka v slote by zhodila proces (§8.2).
+    - **Zrušenie ako pri importe:** `threading.Event` nový pre každé hľadanie, `cancel(id)` ho nastaví priamo z UI vlákna (signál by worker dostal až po skončení hľadania).
+    - **Zrušená úloha nevyšle nič** – ani `ready`, ani `failed`; služba si drží len živé úlohy. Controller tak nemusí rozlišovať neskorý výsledok zrušeného hľadania (overené: Stop počas hľadania → žiadne generovanie, ďalší ťah normálne).
+    - **Kedy sa hľadá:** `web_search_enabled AND properties.chat.web_search` (§7.1) a otázka nie je prázdna – správa len s prílohou nemá čo hľadať.
+    - **Hľadanie a načítanie modelu bežia naraz**, generuje sa až keď sú hotové obe (`_Turn.loading` + `_Turn.web_job`, spoločná brána `_generate_when_ready()`). Namerané: Qwen sa načítal za 0,25 s počas 1,5 s hľadania. Pri načítanom modeli sa čaká len na hľadanie.
+    - **Stop:** keď beží generovanie → ako doteraz; keď sa ešte len hľadá → ťah sa hneď vráti a hľadanie zruší (`_roll_back` ruší bežiace hľadanie vždy, aj pri zlyhaní načítania); počas načítania modelu nerobí nič (tlačidlo je vtedy vypnuté, `load()` sa prerušiť nedá).
+    - **Zlyhanie hľadania** → toast s `WebSearchError` a generovanie bez zdrojov, ťah beží ďalej (rozhodnutie autora).
+    - **Priebeh** ide von ako `ChatController.web_progress(text)` len pre zobrazený ťah (po odchode do iného chatu nie) – zobrazí ho bublina v 13d.
+    - Zdroje sú zatiaľ len v `_Turn.sources` a dopyt v `_Turn.web_query`; do promptu ich dá 13c, do databázy 13d.
+    - **Zatvorenie appky:** `Application.shutdown()` → `web.shutdown()` (zruší, počká na vlákno) pred `database.close()`. So zrušením 4 ms; samotný dopyt na DuckDuckGo sa prerušiť nedá, takže zatvorenie počas neho počká najviac `WEB_TIMEOUT_S` (6 s). Stránky, ktoré sa po zrušení ešte sťahujú v pozadí, môžu oddialiť koniec procesu najviac o `WEB_PAGE_TIMEOUT_S`.
+    - **Pasce pri prepise** (2026-11-09):
+      - **Metódy `WebService` odsadené o úroveň hlbšie** – stali sa vnorenými funkciami v `__init__`. Import aj vytvorenie služby prešli, ale trieda nemala `search()` ani `shutdown()` → `AttributeError` pri prvej správe s webom a **pri každom zatvorení appky** (`Application.shutdown()`). Nič to neodhalí, kým sa metóda nezavolá.
+      - `self._trhead.wait()` – v tej istej (nevolanej) metóde.
+      - Pole `_Turn.source`, ale zápis `turn.sources = …` – dataclass bez `slots` prijme nový atribút ticho, takže pri úspešnom hľadaní by to fungovalo a pri zlyhanom by 13c spadlo na `AttributeError`. Rovnaká rodina ako premenovaný atribút v polovici súboru (kúsok 4b).
+      - `stop()` s `else` namiesto `elif not turn.loading` a poistka v `_on_loaded` bez `self._loaded = None`: Stop počas načítania by vrátil ťah, model by sa dotiahol bez ťahu a `_loaded` by ukazoval na **predchádzajúci** model – ďalšia správa by preskočila reload a generovala s iným modelom, než si chat myslí. Dnes nedosiahnuteľné len vďaka vypnutému Stopu v composeri.
+    **Kúsok 13c – zdroje do promptu** (2026-11-09, rozhodnutie autora: varianta A; Claude napísal, otestoval v scratchpade `run13c` a na žiadosť autora prepísal do repa; testy prešli nad repom). Súbory: `core/context.py` (`with_web`, `fit_web`, `cut_text` presunutý z `web_search`, `build_prompt(..., web=)`, `PromptPlan.web_used`, self-test), `core/constants.py` (`WEB_CONTEXT_SHARE`, `WEB_MIN_SOURCE_TOKENS`, `WEB_OPEN`, `WEB_INSTRUCTION`, `WEB_SOURCE_HEAD`, `WEB_CLOSE`, `WEB_USER_AGENT`), `extensions/web_search.py` (import `cut_text`), `ui/workers.py` (`GenerateRequest.web`, `GenerationResult.web_used`), `ui/llm_service.py` (`generate(..., web=)`), `ui/chat_controller.py`. Testy: `python -m core.context` (14 web kontrol s falošným počítadlom), `t16/web_flow.py` 29/29, `t17/live_answer.py` – Gemma 3 4B so skutočným hľadaním a predvolenými vlastnosťami. Rozhodnutia:
+    - **Prečo orezávať:** pri predvolených vlastnostiach (`n_ctx` 4096, `max_tokens` 1024) je rozpočet promptu 3008 tokenov, tri plné zdroje majú ~4500 → bez orezania by každá webová otázka skončila `ContextOverflowError`.
+    - **Orezáva worker v `build_prompt`**, nie UI ako pri prílohách – len tam je načítaný model (presný počet tokenov) a známa história, a zdroje prichádzajú až tesne pred generovaním.
+    - **Priorita (varianta A, rozhodnutie autora):** otázka s prílohami > zdroje > staršia história. Zdroje dostanú najmenej `WEB_CONTEXT_SHARE` (60 %) voľného miesta po otázke, zvyšok história; **keď história svoje miesto nepotrebuje, dostanú ho zdroje** (`max(60 % voľného, voľné − história)`) – inak by sa v novom chate 40 % rozpočtu zahodilo a zdroje by boli orezané zbytočne. Čo zdroje nevyužijú, prejde histórii samo.
+    - **Delenie medzi zdroje = rovnaký diel, krátky zdroj zvyšok pustí ďalším** (`_water_fill`). Keď by diel klesol pod `WEB_MIN_SOURCE_TOKENS` (80), vynechá sa **posledný** zdroj (vyhľadávač ho dal najnižšie) – čísla zostanú súvislé 1..n. Nezmestí sa žiadny → odpoveď bez webu a info toast „Výsledky z webu sa do kontextu nezmestili.“
+    - **Rez na tokeny:** odhad znakov podľa pomeru, `cut_text`, overenie `count()`, pri prekročení o 10 % menej (najviac 6 pokusov). Hotová správa sa spočíta ešte raz celá; keby so zdrojmi prekročila rozpočet, ide bez nich.
+    - **`cut_text` berie hranicu len v poslednej pätine** (predtým v druhej polovici a prednosť mal odsek pred vetou) – odsek v polovici by vyhral nad vetou na konci a zdroj by prišiel o polovicu dielu. Presunutý do `core/context.py`, lebo `core/` nesmie importovať `extensions/`; `web_search` ho importuje odtiaľ. Zdroje idú do `build_prompt` ako n-tice `WebItem = (číslo, názov, adresa, text)` z rovnakého dôvodu.
+    - **Pokyn citovať je za zdrojmi, tesne pred otázkou.** S pokynom pred zdrojmi Gemma 3 4B v dlhej odpovedi (kvantizácia Q4_K_M) necitovala vôbec a dobehla na `length`; s pokynom za nimi citovala `[1]`, `[2]` a skončila sama (481 tokenov). Poradie v správe: zdroje → pokyn → prílohy → otázka.
+    - **`web_used`** (čísla zdrojov, ktoré sa zmestili) ide z `PromptPlan` cez `GenerationResult` do controllera – 13d uloží len tie.
+    - **Namerané (M2, Gemma 3 4B, predvolené vlastnosti):** dlhé zdroje 296 + 5788 + 5930 znakov → prompt 2891 / 3008 tokenov, bez pretečenia; otázka na dekana FEIT → 8,1 s celkom, odpoveď s citáciou. Či model cituje, je vlastnosť modelu, nie kódu – pri krátkych faktických otázkach citoval vždy, pri dlhom výklade len s pokynom na konci.
+    - Pasca pri teste: riadok priebehu „Čítam 3 stránky…“ sa v konzole nevypísal, lebo prišiel počas načítania modelu (`suppress_stdout_stderr`, §8 krok 9 – test na PC 1). Signál prišiel, stratil sa len výpis.
+    - **Chyba v zápise ALMANACu (Claude, 2026-11-09):** pri doplnení pasce kúsku 13a skript vložil text za riadok „Pin:“ a zvyšok súboru nepripojil – zmizol krok 14, „Prečo sa začína jadrom“, §8.1, §8.2, §9 a §10. Obnovené zo stavu na začiatku session, overené porovnaním riadok po riadku. Poučenie pre úpravy skriptom: po zápise porovnať počet riadkov / `git diff --stat`, nie len to, že `assert` prešiel.
+14. [ ] Doladenie a distribúcia: PyInstaller, **vlastná Windows inštalačka v C#** (vrátane CUDA bez samostatného Toolkitu, §10), overenie otvorených bodov z krokov 9 a 12 na oboch OS
 
 ### Prečo sa začína jadrom, a nie UI ani nastaveniami
 
@@ -928,9 +1019,11 @@ Git:
 
 ## 10. Distribúcia – zistené fakty a otvorené body
 
-Rieši sa až v kroku 7, ale nasledujúce čísla sú overené (2026-10-28) a ovplyvňujú rozhodnutia, ktoré sa robia skôr.
+Rieši sa **až na konci, v kroku 14** (rozhodnutie autora 2026-11-09), ale nasledujúce čísla sú overené (2026-10-28) a ovplyvňujú rozhodnutia, ktoré sa robia skôr.
 
-**Windows:** PyInstaller `--onedir` (nie `--onefile` – ten pri každom spustení rozbaľuje obsah do temp, čo je pri ~300 MB DLL neúnosné), potom Inno Setup zabalí ten adresár do `setup.exe`.
+**Windows inštalačka bude vlastná, v C#** (rozhodnutie autora 2026-11-09), nie Inno Setup. Jej úlohou bude aj **CUDA bez samostatnej inštalácie Toolkitu** (požiadavka autora z 2026-11-06, §8 krok 9 – poznatky z notebooku): používateľ nesmie musieť inštalovať CUDA Toolkit zvlášť. Kandidát: priložiť / stiahnuť `cublas64_13.dll` + `cublasLt64_13.dll` (~507 MB) len pri NVIDIA karte, inak CPU build. Nerozhodnuté.
+
+**Windows:** PyInstaller `--onedir` (nie `--onefile` – ten pri každom spustení rozbaľuje obsah do temp, čo je pri ~300 MB DLL neúnosné), potom ten adresár nainštaluje vlastná inštalačka v C# (pôvodne Inno Setup).
 
 **Do zabalenej PyInstaller appky sa nedá doinštalovať wheel pipom.** Nie je tam pip ani `site-packages`. „Dynamická inštalácia správneho wheelu“ sa teda musí riešiť stiahnutím samotných DLL, nie pipom. Funkcia `required_wheel()` v `core/hardware.py` na to už existuje – vracia napr. `sm120`.
 
@@ -1005,7 +1098,7 @@ CUDA zostavenie `llama.dll` je nalinkované na ovládač NVIDIA (`nvcuda.dll`). 
 **Varianty inštalačky – nerozhodnuté:**
 
 1. Štyri inštalačky podľa architektúry GPU. Funguje offline, ale používateľ musí vedieť, akú má kartu.
-2. Inno Setup v `[Run]` sekcii stiahne správny balík. Malá inštalačka, potrebuje internet pri inštalácii.
+2. Inštalačka (pôvodne Inno Setup `[Run]`, dnes vlastná v C#) stiahne správny balík. Malá inštalačka, potrebuje internet pri inštalácii.
 3. CPU základ + voliteľné dotiahnutie GPU akcelerácie pri prvom spustení. Najpríjemnejšie pre používateľa, ale blokuje to nesúlad verzií (vyššie).
 
 **macOS je jednoduchší** – Metal build je jeden pre všetky Apple Silicon, žiadna matica architektúr ani cuBLAS.

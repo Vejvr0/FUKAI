@@ -82,9 +82,9 @@ class LlmService(QObject):
         self._engine.unload()
     
     
-    def generate(self, history: list[HistoryItem], question: str, *, sampling: SamplingParams, system_prompt: str = "") -> int:
+    def generate(self, history: list[HistoryItem], question: str, *, sampling: SamplingParams, system_prompt: str = "", web: list | tuple = ()) -> int:
         self._require_idle()
-        request = GenerateRequest(next(self._ids), history, question, sampling, system_prompt)
+        request = GenerateRequest(next(self._ids), history, question, sampling, system_prompt, tuple(web))
         self._current = request.id
         self._set_busy(True)
         self._generate_requested.emit(request)

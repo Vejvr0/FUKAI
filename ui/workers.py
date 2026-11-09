@@ -4,14 +4,16 @@ import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Callable
 from PyQt6.QtCore import QObject, pyqtSignal, pyqtSlot
 from core.constants import IMPORT_CHUNK_BYTES
 from core.gguf import check_usable, read_meta
 from core.context import HistoryItem, build_prompt
 from core.llm_engine import FinishReason, LlmEngine
 from core.settings import LoadParams, SamplingParams
-from core.errors import FukaiError, GenerationError, ModelImportError, ModelLoadError, AttachmentError
+from core.errors import FukaiError, GenerationError, ModelImportError, ModelLoadError, AttachmentError, WebSearchError
 from extensions.file_parser import extract
+from extensions import web_search
 
 __all__ = [
     "GenerateRequest",
@@ -20,7 +22,9 @@ __all__ = [
     "ImportWorker",
     "LlmWorker",
     "ExtractRequest",
-    "ExtractWorker"
+    "ExtractWorker",
+    "WebRequest",
+    "WebWorker"
 ]
 
 
@@ -31,6 +35,7 @@ class GenerateRequest:
     question: str
     sampling: SamplingParams
     system_prompt: str = ""
+    web: tuple = ()                         # (číslo, názov, adresa, text) – core.context.WebItem
     
     
 @dataclass(frozen=True)
@@ -43,6 +48,7 @@ class GenerationResult:
     completion_tokens: int = 0
     first_token_s: float | None = None
     total_s: float = 0.0
+    web_used: list[int] = field(default_factory=list)
     
     
     @property
@@ -108,9 +114,11 @@ class LlmWorker(QObject):
             system_prompt=request.system_prompt,
             n_ctx=n_ctx,
             max_tokens=request.sampling.max_tokens,
-            count=engine.count_tokens
+            count=engine.count_tokens,
+            web=request.web
         )
-        done = dict(counted=plan.counted, dropped=plan.dropped, prompt_tokens=plan.prompt_tokens)
+        done = dict(counted=plan.counted, dropped=plan.dropped, prompt_tokens=plan.prompt_tokens,
+                    web_used=plan.web_used)
         
         if self._cancelled == request.id:
             return GenerationResult("", FinishReason.STOPPED, total_s=time.monotonic() - started, **done)
@@ -220,3 +228,35 @@ class ExtractWorker(QObject):
             self.failed.emit(request.job_id, exc)
         except Exception as exc:
             self.failed.emit(request.job_id, AttachmentError(f"{type(exc).__name__}: {exc}"))
+
+
+@dataclass(frozen=True)
+class WebRequest:
+    job_id: int
+    query: str
+    cancel: threading.Event
+
+
+class WebWorker(QObject):
+    progress = pyqtSignal(int, str)
+    ready = pyqtSignal(int, object)
+    failed = pyqtSignal(int, object)
+    
+    
+    def __init__(self, gather: Callable[..., list] = web_search.gather) -> None:
+        super().__init__()
+        self._gather = gather
+    
+    
+    @pyqtSlot(object)
+    def run(self, request: WebRequest) -> None:
+        def progress(text: str) -> None:
+            self.progress.emit(request.job_id, text)
+        try:
+            sources = self._gather(request.query, cancel=request.cancel, progress=progress)
+        except FukaiError as exc:
+            self.failed.emit(request.job_id, exc)
+        except Exception as exc:
+            self.failed.emit(request.job_id, WebSearchError(f"{type(exc).__name__}: {exc}"))
+        else:
+            self.ready.emit(request.job_id, sources)

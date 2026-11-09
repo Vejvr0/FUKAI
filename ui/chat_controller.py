@@ -9,6 +9,7 @@ from core.errors import FukaiError, Notice
 from storage.database import Database
 from ui.constants import TITLE_WORDS, NEW_CHAT_TITLE
 from ui.llm_service import LlmService
+from ui.web_service import WebService
 from ui.workers import GenerationResult
 from ui.settings_store import SettingsStore
 
@@ -27,6 +28,10 @@ class _Turn:
     attachments: list = field(default_factory=list)
     request_id: int | None = None
     parts: list[str] = field(default_factory=list)
+    loading: bool = False
+    web_job: int | None = None
+    web_query: str | None = None
+    sources: list = field(default_factory=list)
 
 
 class ChatController(QObject):
@@ -41,14 +46,16 @@ class ChatController(QObject):
     turn_rolled_back = pyqtSignal(str)
     notice = pyqtSignal(object)
     model_changed = pyqtSignal(object)
+    web_progress = pyqtSignal(str)
 
 
-    def __init__(self, settings: SettingsStore, hardware: HardwareProfile, database: Database, llm: LlmService, parent: QObject | None = None) -> None:
+    def __init__(self, settings: SettingsStore, hardware: HardwareProfile, database: Database, llm: LlmService, web: WebService, parent: QObject | None = None) -> None:
         super().__init__(parent)
         self._settings = settings
         self._hardware = hardware
         self._database = database
         self._llm = llm
+        self._web = web
         
         self._view = 0
         self._chat_id: int | None = None
@@ -62,6 +69,10 @@ class ChatController(QObject):
         llm.token.connect(self._on_token)
         llm.finished.connect(self._on_finished)
         llm.failed.connect(self._on_failed)
+        
+        web.progress.connect(self._on_web_progress)
+        web.ready.connect(self._on_web_ready)
+        web.failed.connect(self._on_web_failed)
     
     
     @property
@@ -206,34 +217,47 @@ class ChatController(QObject):
             self.notice.emit(exc.as_notice())
             return
 
-        self._turn = _Turn(self._view, self._chat_id, model["id"], model["title"], props, question,
-                           history, attachments)
+        turn = _Turn(self._view, self._chat_id, model["id"], model["title"], props, question, history, attachments)
+        self._turn = turn
         self.busy_changed.emit(True)
         self.turn_started.emit(question, [{"title": item.title} for item in attachments])
-
+        
+        if question and props.chat.web_search and self._settings.current.web_search_enabled:
+            turn.web_query = question
+            turn.web_job = self._web.search(question)
         if self._loaded is None or self._loaded.clamped() != props.load.clamped():
+            turn.loading = True
             self.loading_started.emit(model["title"])
             self._llm.load(props.load)
         else:
-            self._generate()
+            self._generate_when_ready()
     
     
     def stop(self) -> None:
-        if self._turn is not None:
+        turn = self._turn
+        if turn is None:
+            return
+        if turn.request_id is not None:
             self._llm.stop()
+        elif not turn.loading:
+            self._roll_back()
 
 
     def _history(self, chat_id: int) -> list[HistoryItem]:
-        """Správa používateľa ide do promptu aj s textom svojich príloh - tak, ako bola
-        odoslaná. Inak by sa model po druhej otázke na obsah súboru už nedostal."""
         files = self._database.get_attachments(chat_id, content=True)
         history = []
         for message in self._database.get_messages(chat_id):
             text = message["data"].get("text", "")
             attached = [(row["title"], row["content"]) for row in files.get(message["id"], ())]
-            history.append(HistoryItem(message["id"], message["role"],
-                                       with_attachments(text, attached), message["tokens"]))
+            history.append(HistoryItem(message["id"], message["role"], with_attachments(text, attached), message["tokens"]))
         return history
+    
+    
+    def _generate_when_ready(self) -> None:
+        turn = self._turn
+        if turn is None or turn.loading or turn.web_job is not None or turn.request_id is not None:
+            return
+        self._generate()
 
 
     def _generate(self) -> None:
@@ -241,7 +265,8 @@ class ChatController(QObject):
         turn.request_id = self._llm.generate(
             turn.history, with_attachments(turn.question, [(a.title, a.text) for a in turn.attachments]),
             sampling=turn.props.sampling,
-            system_prompt=turn.props.chat.system_prompt
+            system_prompt=turn.props.chat.system_prompt,
+            web=[(s.n, s.title, s.url, s.text) for s in turn.sources]
         )
     
     
@@ -250,9 +275,13 @@ class ChatController(QObject):
         for notice in notices:
             self.notice.emit(notice)
         turn = self._turn
+        if turn is None:
+            self._loaded = None
+            return
+        turn.loading = False
         self._loaded = turn.props.load
         self._database.mark_model_used(turn.model_id)
-        self._generate()
+        self._generate_when_ready()
     
     
     def _on_load_failed(self, error: FukaiError) -> None:
@@ -260,6 +289,35 @@ class ChatController(QObject):
         self._loaded = None
         self.notice.emit(error.as_notice())
         self._roll_back()
+        
+    
+    def _web_turn(self, job_id: int) -> _Turn | None:
+        turn = self._turn
+        return turn if turn is not None and turn.web_job == job_id else None
+    
+    
+    def _on_web_progress(self, job_id: int, text: str) -> None:
+        turn = self._web_turn(job_id)
+        if turn is not None and self._visible(turn):
+            self.web_progress.emit(text)
+    
+    
+    def _on_web_ready(self, job_id: int, sources: list) -> None:
+        turn = self._web_turn(job_id)
+        if turn is None:
+            return
+        turn.web_job = None
+        turn.sources = list(sources)
+        self._generate_when_ready()
+    
+    
+    def _on_web_failed(self, job_id: int, error: FukaiError) -> None:
+        turn = self._web_turn(job_id)
+        if turn is None:
+            return
+        turn.web_job = None
+        self.notice.emit(error.as_notice())
+        self._generate_when_ready()
 
 
     def _on_token(self, request_id: int, piece: str) -> None:
@@ -318,6 +376,11 @@ class ChatController(QObject):
         self.busy_changed.emit(False)
         if visible:
             self.turn_finished.emit(answer)
+        if turn.sources and not result.web_used and visible:
+            self.notice.emit(Notice.info(
+                "Výsledky z webu sa do kontextu nezmestili.",
+                hint="Odpoveď je bez nich. Zväčši kontext vo Vlastnostiach alebo zníž maximálny počet tokenov odpovede.")
+            )
         if result.dropped and visible:
             self.notice.emit(Notice.info(
                 "Staršie správy sa do kontextu modelu nezmestili.",
@@ -336,6 +399,8 @@ class ChatController(QObject):
 
     def _roll_back(self) -> None:
         turn, self._turn = self._turn, None
+        if turn is not None and turn.web_job is not None:
+            self._web.cancel(turn.web_job)
         self.busy_changed.emit(False)
         if turn is not None and self._visible(turn):
             self.turn_rolled_back.emit(turn.question)
@@ -357,7 +422,6 @@ class ChatController(QObject):
 
     @staticmethod
     def _title(turn: _Turn) -> str:
-        """Názov chatu je začiatok otázky; pri správe bez textu ho dá prvá príloha."""
         title = " ".join(turn.question.split()[:TITLE_WORDS])
         if title:
             return title

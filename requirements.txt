@@ -18,7 +18,8 @@ openpyxl==3.1.5
 python-docx==1.2.0
 
 # --- Web rozšírenie (krok 13) ---
-ddgs==9.7.1
+ddgs==9.16.1
+primp==2.0.1
 requests==2.32.5
 trafilatura==2.0.0
 

@@ -1,12 +1,19 @@
 from __future__ import annotations
 from collections.abc import Callable
-from dataclasses import dataclass, replace
-from core.constants import ATTACHMENT_CLOSE, ATTACHMENT_OPEN, TOKENS_PER_MESSAGE, PROMPT_RESERVE
+from dataclasses import dataclass, field, replace
+from core.constants import (
+    ATTACHMENT_CLOSE, ATTACHMENT_OPEN, TOKENS_PER_MESSAGE, PROMPT_RESERVE, WEB_CLOSE,
+    WEB_CONTEXT_SHARE, WEB_INSTRUCTION, WEB_MIN_SOURCE_TOKENS, WEB_OPEN, WEB_SOURCE_HEAD
+)
 from core.errors import ContextOverflowError
 
 __all__ = [
     "HistoryItem",
     "with_attachments",
+    "WebItem",
+    "with_web",
+    "fit_web",
+    "cut_text",
     "PromptPlan",
     "fill_tokens",
     "build_prompt"
@@ -28,6 +35,10 @@ class PromptPlan:
     dropped: list[int]
     prompt_tokens: int
     budget: int
+    web_used: list[int] = field(default_factory=list)
+
+
+WebItem = tuple[int, str, str, str]         # číslo, názov, adresa, text - core nevie o extensions/
 
 
 def with_attachments(question: str, attachments: list[tuple[str, str]]) -> str:
@@ -39,6 +50,71 @@ def with_attachments(question: str, attachments: list[tuple[str, str]]) -> str:
     blocks = [f"{ATTACHMENT_OPEN.format(title=title)}\n{text}\n{ATTACHMENT_CLOSE}"
               for title, text in attachments]
     return "\n\n".join(blocks + ([question] if question else []))
+
+
+def with_web(question: str, sources: list[WebItem]) -> str:
+    """Zdroje idú do tej istej správy ako otázka (striedanie rolí, ako pri prílohách),
+    pokyn citovať a otázka sú až za zdrojmi - malé modely sa držia toho, čo čítali naposledy
+    (Gemma 3 4B s pokynom pred zdrojmi v dlhej odpovedi necitovala vôbec)."""
+    if not sources:
+        return question
+    blocks = [f"{WEB_SOURCE_HEAD.format(n=n, title=title, url=url)}\n{text}".rstrip()
+              for n, title, url, text in sources]
+    web = "\n\n".join([WEB_OPEN, *blocks, WEB_CLOSE, WEB_INSTRUCTION])
+    return f"{web}\n\n{question}" if question else web
+
+
+def cut_text(text: str, limit: int) -> str:
+    """Skráti na `limit` znakov, radšej na konci odseku, riadku alebo vety než uprostred slova.
+    Hranica sa berie len v poslednej pätine - inak by odsek v polovici vyhral nad vetou na konci."""
+    if len(text) <= limit:
+        return text
+    head = text[:limit]
+    for mark in ("\n\n", "\n", ". "):
+        at = head.rfind(mark)
+        if at >= limit * 4 // 5:
+            return head[:at + (1 if mark == ". " else 0)].rstrip()
+    return head.rstrip() + "…"
+
+
+def fit_web(sources: list[WebItem], limit: int, count: Callable[[str], int]) -> list[WebItem]:
+    """Zdroje orezané tak, aby spolu s hlavičkou a pokynom zabrali najviac `limit` tokenov.
+    Miesto sa delí rovnakým dielom; zdroj kratší než diel ho nespotrebuje celý a zvyšok
+    dostanú ostatné. Keď by diel klesol pod WEB_MIN_SOURCE_TOKENS, vynechá sa posledný zdroj
+    (vyhľadávač ho dal najnižšie) a delí sa znova."""
+    keep = list(sources)
+    costs = {n: count(text) for n, _, _, text in keep}
+    while keep:
+        room = limit - count(with_web("", [(n, title, url, "") for n, title, url, _ in keep]))
+        if room > 0:
+            shares = _water_fill([costs[n] for n, *_ in keep], room)
+            if all(share >= min(costs[n], WEB_MIN_SOURCE_TOKENS) for share, (n, *_) in zip(shares, keep)):
+                return [(n, title, url, _cut_tokens(text, share, costs[n], count))
+                        for share, (n, title, url, text) in zip(shares, keep)]
+        keep.pop()
+    return []
+
+
+def _water_fill(costs: list[int], room: int) -> list[int]:
+    """Rovnaký diel pre každého; kto potrebuje menej, zvyšok pustí ďalším."""
+    shares = [0] * len(costs)
+    left = room
+    for k, i in enumerate(sorted(range(len(costs)), key=costs.__getitem__)):
+        shares[i] = min(costs[i], left // (len(costs) - k))
+        left -= shares[i]
+    return shares
+
+
+def _cut_tokens(text: str, share: int, cost: int, count: Callable[[str], int]) -> str:
+    if cost <= share:
+        return text
+    chars = len(text) * share // cost
+    for _ in range(6):
+        cut = cut_text(text, chars)
+        if count(cut) <= share:
+            return cut
+        chars = chars * 9 // 10
+    return cut_text(text, chars)
 
 
 def fill_tokens(history: list[HistoryItem], count: Callable[[str], int]) -> tuple[list[HistoryItem], dict[int, int]]:
@@ -56,7 +132,7 @@ def fill_tokens(history: list[HistoryItem], count: Callable[[str], int]) -> tupl
     return filled_history, counted
 
 
-def build_prompt(history: list[HistoryItem], question: str, *, system_prompt: str, n_ctx: int, max_tokens: int, count: Callable[[str], int]) -> PromptPlan:
+def build_prompt(history: list[HistoryItem], question: str, *, system_prompt: str, n_ctx: int, max_tokens: int, count: Callable[[str], int], web: list[WebItem] = ()) -> PromptPlan:
     history, counted = fill_tokens(history, count)
     budget = n_ctx - max_tokens - PROMPT_RESERVE
     system_cost = (count(system_prompt) + TOKENS_PER_MESSAGE) if system_prompt else 0
@@ -71,6 +147,21 @@ def build_prompt(history: list[HistoryItem], question: str, *, system_prompt: st
     usable = history
     while usable and usable[-1].role != "assistant":
         usable = usable[:-1]
+
+    # Zdroje majú prednosť pred staršou históriou, ale najviac WEB_CONTEXT_SHARE voľného miesta -
+    # zvyšok patrí histórii. Keď história celé svoje miesto nepotrebuje, dostanú ho zdroje.
+    web_used: list[int] = []
+    if web:
+        free = budget - fixed
+        history_need = sum(item.tokens + TOKENS_PER_MESSAGE for item in usable)
+        fitted = fit_web(list(web), max(int(free * WEB_CONTEXT_SHARE), free - history_need), count)
+        if fitted:
+            full = with_web(question, fitted)
+            full_cost = count(full) + TOKENS_PER_MESSAGE
+            if system_cost + full_cost <= budget:
+                question, question_cost = full, full_cost
+                fixed = system_cost + question_cost
+                web_used = [n for n, *_ in fitted]
 
     remaining = budget - fixed
     start = len(usable)
@@ -100,7 +191,8 @@ def build_prompt(history: list[HistoryItem], question: str, *, system_prompt: st
         counted=counted,
         dropped=[item.id for item in history if item.id not in kept_ids],
         prompt_tokens=fixed + history_cost,
-        budget=budget
+        budget=budget,
+        web_used=web_used
     )
 
 
@@ -185,6 +277,67 @@ if __name__ == "__main__":
             print(f"  {note}:")
             print(f"    {exc.message}")
             print(f"    {exc}")
+
+    print("\n--- web ---")
+    bad: list[str] = []
+    def ok(label: str, cond: bool) -> None:
+        print(f"  {'OK ' if cond else 'ZLE'} {label}")
+        if not cond:
+            bad.append(label)
+
+    def src(n: int, words_count: int) -> WebItem:
+        return (n, f"Nadpis {n}", f"https://x/{n}", " ".join(f"z{n}w{i}." for i in range(words_count)))
+
+    text = with_web("Kto je rektor?", [src(1, 3), src(2, 3)])
+    ok("with_web: pokyn, [1] s adresou, otázka posledná",
+       WEB_INSTRUCTION in text and "[1] Nadpis 1\nhttps://x/1" in text and text.endswith("\n\nKto je rektor?"))
+    ok("with_web bez zdrojov = otázka", with_web("q", []) == "q")
+    ok("cut_text: veta na konci vyhrá nad odsekom v polovici",
+       cut_text("a" * 50 + "\n\n" + "b. " * 20, 100).endswith("b."))
+
+    three = [src(1, 400), src(2, 400), src(3, 400)]
+    overhead = words(with_web("", [(n, t, u, "") for n, t, u, _ in three]))
+    fitted = fit_web(three, 10_000, words)
+    ok("fit_web: všetko sa zmestí → texty bez zmeny", [f[3] for f in fitted] == [t[3] for t in three])
+    fitted = fit_web([src(1, 50), src(2, 400), src(3, 400)], overhead + 450, words)
+    shares = [words(f[3]) for f in fitted]
+    ok(f"fit_web: krátky zdroj celý, dlhé po rovnakom diele {shares}",
+       shares[0] == 50 and abs(shares[1] - shares[2]) <= 1 and 400 <= sum(shares) <= 450)
+    ok("fit_web: spolu s hlavičkou najviac limit",
+       words(with_web("", fitted)) <= overhead + 450)
+    fitted = fit_web(three, overhead + 200, words)
+    ok(f"fit_web: diel pod {WEB_MIN_SOURCE_TOKENS} → vynechá sa posledný ({[f[0] for f in fitted]})",
+       [f[0] for f in fitted] == [1, 2])
+    ok("fit_web: nezmestí sa nič → []", fit_web(three, 20, words) == [])
+
+    # budget = 4096 - 1024 - 64 = 3008; otázka 3 + 8 → voľných 2997
+    plan = build_prompt([], "kto je rektor", system_prompt="", n_ctx=4096, max_tokens=1024, count=words,
+                        web=[src(1, 2000), src(2, 2000), src(3, 2000)])
+    ok(f"bez histórie dostanú zdroje celé voľné miesto ({plan.prompt_tokens} / {plan.budget})",
+       plan.prompt_tokens <= plan.budget and plan.prompt_tokens > plan.budget * 0.95 and plan.web_used == [1, 2, 3])
+    ok("otázka je posledná a zdroje v tej istej správe",
+       plan.messages[-1]["role"] == "user" and plan.messages[-1]["content"].endswith("kto je rektor")
+       and "[3] Nadpis 3" in plan.messages[-1]["content"])
+
+    long_chat = chat(400)                       # 400 × 18 = 7200 tokenov histórie
+    plan = build_prompt(long_chat, "kto je rektor", system_prompt="", n_ctx=4096, max_tokens=1024,
+                        count=words, web=[src(1, 2000), src(2, 2000), src(3, 2000)])
+    web_cost = words(plan.messages[-1]["content"]) - 3
+    free = plan.budget - 11
+    ok(f"dlhý chat: zdroje {web_cost} ≈ 60 % z {free}, zvyšok histórii ({len(plan.messages) - 1} správ)",
+       int(free * 0.6) * 0.9 <= web_cost <= int(free * 0.6) and len(plan.messages) > 60
+       and plan.prompt_tokens <= plan.budget)
+    plan = build_prompt(long_chat, "kto je rektor", system_prompt="", n_ctx=4096, max_tokens=1024,
+                        count=words, web=[src(1, 30)])
+    ok("krátky zdroj nezoberie histórii viac, než potrebuje",
+       words(plan.messages[-1]["content"]) - 3 < 120 and plan.prompt_tokens <= plan.budget)
+    plan = build_prompt(chat(4), "kto je rektor", system_prompt="", n_ctx=200, max_tokens=50,
+                        count=words, web=three)
+    ok(f"malý kontext: zdroje sa nezmestia → bez webu, web_used={plan.web_used}",
+       plan.web_used == [] and plan.messages[-1]["content"] == "kto je rektor")
+    plan = build_prompt(chat(4), "ahoj", system_prompt="", n_ctx=2048, max_tokens=256, count=words)
+    ok("bez webu sa nič nemení", plan.web_used == [] and plan.messages[-1]["content"] == "ahoj")
+    print("  web: " + ("všetko OK" if not bad else f"{len(bad)} ZLE"))
 
     if len(sys.argv) > 1:
         from core.hardware import detect
