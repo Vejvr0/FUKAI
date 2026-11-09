@@ -843,7 +843,7 @@ V ALMANAC-u zostalo pri každom kúsku jednovetné poučenie, tu je úplný zozn
 2. **Krok 13 – web rozšírenie** (posledná funkcia z §2).
 3. Otvorené body z ALMANAC §8 krok 9 a krok 12 (toast cez prvú kartu, neoverené na macOS, CUDA bez Toolkitu, drobnosti).
 
-## 2026-11-09 (večer) – MacBook: web rozšírenie, kúsky 13a–13c
+## 2026-11-09 (večer) – MacBook: web rozšírenie, kúsky 13a–13e (krok 13 hotový)
 
 **Stav na začiatku:** `80965c8` (oprava menu ⋯), rozhodnutia autora ku kroku 13 (dopyt = otázka, text stránok len v ťahu, zlyhanie → toast, `sk-sk`).
 
@@ -853,7 +853,9 @@ V ALMANAC-u zostalo pri každom kúsku jednovetné poučenie, tu je úplný zozn
 
 **13b – `ui/web_service.py` + controller** (Claude navrhol, autor prepísal, Claude opravil). Hľadanie vo vlastnom vlákne súbežne s načítaním modelu, Stop počas hľadania vráti ťah, zlyhanie → toast a odpoveď bez webu. `t16/web_flow.py` 29/29.
 
-**13c – zdroje do promptu** (varianta A – rozhodnutie autora; Claude napísal aj prepísal do repa). Zdroje majú prednosť pred staršou históriou, najmenej 60 % voľného miesta, viac keď ho história nepotrebuje. Gemma 3 4B pri predvolenom kontexte 4096: prompt 2891 / 3008 tokenov, citácie `[1]`, `[2]`.
+**13c – zdroje do promptu** (varianta A – rozhodnutie autora; Claude napísal aj prepísal do repa). Zdroje majú prednosť pred staršou históriou, najmenej 60 % voľného miesta, viac keď ho história nepotrebuje. Gemma 3 4B pri predvolenom kontexte 4096: prompt 2891 / 3008 tokenov, citácie `[1]`, `[2]`. Commit `0636c7a`.
+
+**13d + 13e – UI a prepínač** (na žiadosť autora napísal a prepísal Claude). Čip „Web“ nad otázkou, stav „Hľadám na webe…“ v bubline, zdroje pod odpoveďou ako odkazy, „· 3 zdroje“ v meta riadku, uloženie dopytu a použitých zdrojov do `content.data`; tlačidlo Web zapisuje `properties.chat.web_search` (sticky, draft v novom chate), počas ťahu je vypnuté. `t18/web_ui.py` 30/30 v skutočnej appke + snímky oboch tém.
 
 ### Opravené chyby (a prečo stáli za zmienku)
 
@@ -866,12 +868,15 @@ V ALMANAC-u zostalo pri každom kúsku jednovetné poučenie, tu je úplný zozn
 | self-test `web_search` hlásil `exit 0` aj so ZLE | `log.clear()` po offline časti zahodil výsledky (chyba Clauda) |
 | User-Agent bez adresy | Wikipédia vracala 403 – najčastejší zdroj bol vždy len úryvok |
 | pokyn citovať pred zdrojmi | Gemma pri dlhej odpovedi necitovala vôbec; za zdrojmi cituje |
+| `Composer.set_features` volal `setChecked(False)` | s 13e by globálne vypnutie webu zapísalo `web_search=False` do zobrazeného chatu – §7.1 to zakazuje; teraz bez signálu |
+| zastaraný stav „Čítam 3 stránky…“ | visel v bubline aj počas načítania modelu; controller po hľadaní pošle prázdny stav |
+| výpisy testu počas načítania modelu zmizli | `suppress_stdout_stderr` (známa pasca) – test píše výsledky aj do súboru |
 | **odrezaný ALMANAC** (chyba Clauda) | skript vložil pascu 13a a nepripojil zvyšok súboru – zmizol krok 14, §8.1, §8.2, §9, §10. Obnovené zo stavu na začiatku session, overené porovnaním |
 
 ### Nedoriešené do ďalšej session
 
-1. **Commit** 13a–13c + ALMANAC + SESSIONS (autor).
-2. **13d** – stav hľadania v bubline, čip „Web“, klikateľné zdroje pod odpoveďou, meta „· N zdroje“, uloženie `content.data.web` (len zdroje z `web_used`).
-3. **13e** – prepínač Web → `properties.chat.web_search` (sticky, draft v novom chate); dovtedy sa web dá zapnúť len cez vlastnosti v kóde, v appke ho tlačidlo ešte nezapne.
-4. Overenie opravy menu ⋯ v živom okne na PC 1 (z rannej session).
+1. **Commit** 13d + 13e + ALMANAC + SESSIONS (autor).
+2. **Živý test webu** v okne na Macu aj PC 1: zapnúť Web, otázka, klik na zdroj (otvorí prehliadač), návrat do chatu počas hľadania, globálne vypnutie v Nastaveniach.
+3. Overenie opravy menu ⋯ v živom okne na PC 1 (z rannej session).
+4. Krok 14 – PyInstaller, C# inštalačka, CUDA bez Toolkitu; otvorené body krokov 9, 12 a 13 (klikateľné citácie `[n]` v texte nie sú).
 

@@ -9,6 +9,7 @@ __all__ = [
     "pages_text",
     "short_tokens",
     "size_text",
+    "sources_text",
     "tokens_text"
 ]
 
@@ -34,9 +35,17 @@ def answer_meta(data: dict) -> str:
         parts.append(f"{stats['tokens_per_s']:.0f} tok/s")
     if stats.get("total_s") is not None:
         parts.append(f"{stats['total_s']:.1f} s".replace(".", ","))
+    sources = (data.get("web") or {}).get("sources")
+    if sources:
+        parts.append(sources_text(len(sources)))
     if data.get("finish_reason") == "length":
         parts.append("skrátená - dosiahnutý limit tokenov")
     return " · ".join(p for p in parts if p)
+
+
+def sources_text(count: int) -> str:
+    word = "zdroj" if count == 1 else "zdroje" if count < 5 else "zdrojov"
+    return f"{count} {word}"
 
 
 def tokens_text(count: int) -> str:

@@ -161,6 +161,8 @@ _QSS = Template("""
     QTextBrowser#bubbleText { background: transparent; border: none; color: $user_text; }
     QTextBrowser#answerText { background: transparent; border: none; color: $text; }
     QLabel#answerMeta { color: $text_muted; font-size: 12px; }
+    QLabel#answerStatus { color: $text_muted; font-size: 13px; font-style: italic; }
+    QLabel#answerSources { color: $text_muted; font-size: 12px; }
 
     QFrame#codeBlock { background: $code_bg; border: 1px solid $line; border-radius: 10px; }
     QFrame#codeHead  { background: transparent; border: none; border-bottom: 1px solid $code_scroll; }
@@ -216,6 +218,9 @@ _QSS = Template("""
     }
     QToolButton#roundButton:hover, QToolButton#modelPill:hover { background: $chip_hover; }
     QToolButton#roundButton:disabled, QToolButton#modelPill:disabled { background: $chip; }
+    QToolButton#roundButton:checked { background: $send; }
+    QToolButton#roundButton:checked:hover { background: $send_hover; }
+    QToolButton#roundButton:checked:disabled { background: $chip; }
     QLabel#pillText { font-size: 14px; font-weight: 600; }
     QLabel#pillText:disabled { color: $text_muted; }
 
@@ -412,6 +417,8 @@ _QSS = Template("""
         background: $chip; border: 1px solid $line; border-radius: 12px;
     }
     QFrame#msgChip[clickable="true"]:hover { background: $chip_hover; }
+    QFrame#msgChip[web="true"] { border-color: $accent; }
+    QLabel#webChipText { color: $accent_strong; font-size: 12px; font-weight: 600; }
     QLabel#chipMeta { color: $text_muted; font-size: 11px; }
     QToolButton#chipClose {
         border: none; border-radius: 8px; background: transparent;

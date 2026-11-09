@@ -9,7 +9,8 @@ from PyQt6.QtCore import QEvent, QObject, QPoint, QSize, Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QIcon, QKeyEvent, QPalette, QTextOption
 from ui.attachment_bar import AttachmentBar
 from ui.constants import (
-    COMPOSER_BUTTON, COMPOSER_INPUT_MAX_HEIGHT, MODEL_MENU_WIDTH, MODEL_PILL_TEXT_WIDTH, NO_MODEL
+    COMPOSER_BUTTON, COMPOSER_INPUT_MAX_HEIGHT, MODEL_MENU_WIDTH, MODEL_PILL_TEXT_WIDTH, NO_MODEL,
+    WEB_BUTTON_OFF, WEB_BUTTON_ON
 )
 from ui.formatting import model_subtitle
 from ui.icons import icon
@@ -234,8 +235,9 @@ class Composer(QFrame):
         
         self._attach = self._round_button("Prílohy")
         self._attach.clicked.connect(self.attach_requested)
-        self._web = self._round_button("Hľadanie na webe")
+        self._web = self._round_button(WEB_BUTTON_OFF)
         self._web.setCheckable(True)
+        self._web.toggled.connect(self._refresh_web)
         self._web.toggled.connect(self.web_toggled)
         
         self._pill = _ModelPill()
@@ -306,14 +308,22 @@ class Composer(QFrame):
         self._attachments_enabled = attachments
         self._attach.setVisible(attachments)
         self._web.setVisible(web_search)
-        if not web_search and self._web.isChecked():
-            self._web.setChecked(False)
+        if not web_search:
+            self.set_web(False)     # bez signálu - globálne vypnutie nemení vlastnosti chatu (§7.1)
 
 
     def set_web(self, on: bool) -> None:
+        """Stav zo vlastností chatu - bez signálu `web_toggled`, inak by sa hneď zapísal späť."""
         blocked = self._web.blockSignals(True)
         self._web.setChecked(on)
         self._web.blockSignals(blocked)
+        self._refresh_web()
+
+
+    def _refresh_web(self) -> None:
+        on = self._web.isChecked()
+        self._web.setIcon(self._icon_web_on if on else self._icon_web)
+        self._web.setToolTip(WEB_BUTTON_ON if on else WEB_BUTTON_OFF)
     
     
     def set_theme(self, theme: str) -> None:
@@ -322,7 +332,9 @@ class Composer(QFrame):
         tokens = THEMES[theme]
         text = tokens["text"]
         self._attach.setIcon(icon("plus", text))
-        self._web.setIcon(icon("globe", text))
+        self._icon_web = icon("globe", text)
+        self._icon_web_on = icon("globe", tokens["send_text"], disabled_color=text)
+        self._refresh_web()
         self._pill.set_chevron(icon("chev", text, 16))
         self._icon_send = icon("up", tokens["send_text"], disabled_color=text)
         self._icon_stop = icon("stop", tokens["send_text"], disabled_color=text)
@@ -346,6 +358,7 @@ class Composer(QFrame):
     def set_busy(self, busy: bool) -> None:
         self._busy = busy
         self._pill.setEnabled(not busy)
+        self._web.setEnabled(not busy)
         self._update_buttons()
     
     

@@ -104,6 +104,7 @@ class MainWindow(QMainWindow):
         controller.model_changed.connect(composer.set_model)
         controller.turn_started.connect(composer.begin_turn)
         controller.turn_started.connect(self._chat.begin_turn)
+        controller.web_progress.connect(self._chat.set_web_status)
         self._chat.messages.preview_requested.connect(self._on_history_preview)
         controller.token.connect(self._chat.append_token)
         controller.turn_finished.connect(self._chat.finish_turn)
@@ -121,7 +122,8 @@ class MainWindow(QMainWindow):
         composer.attachments.preview_requested.connect(self._on_preview)
         attachments.ready.connect(self._on_attachment_ready)
         attachments.failed.connect(self._on_attachment_failed)
-        composer.web_toggled.connect(self._on_web_preview)
+        composer.web_toggled.connect(self._on_web_toggled)
+        controller.model_changed.connect(lambda _model: self._sync_web())
         library.import_progress.connect(self._on_import_progress)
         library.import_finished.connect(self._on_import_finished)
         library.import_failed.connect(self._on_import_failed)
@@ -349,6 +351,7 @@ class MainWindow(QMainWindow):
     def _on_websearch_changed(self, enabled: bool) -> None:
         if self._save_settings(web_search_enabled=enabled):
             self._chat.composer.set_features(self._settings.current.attachments_enabled, enabled)
+            self._sync_web()
 
 
     def _save_settings(self, **change) -> bool:
@@ -532,7 +535,27 @@ class MainWindow(QMainWindow):
         return budget
 
 
-    def _on_web_preview(self, on: bool) -> None:
-        if on:
-            self.show_notice(Notice.info("Vyhľadávanie na webe sa pripravuje.", hint="Pribudne v kroku 13."))
-            self._chat.composer.set_web(False)
+    def _sync_web(self) -> None:
+        """Tlačidlo Web ukazuje vlastnosť zobrazeného chatu (sticky, §7.2). Po výmene modelu
+        sa vlastnosti resetujú (§7.1), takže sa vypne aj prepínač."""
+        if not self._settings.current.web_search_enabled:
+            return
+        try:
+            on = self._controller.web_search()
+        except FukaiError as exc:
+            self.show_notice(exc.as_notice())
+            on = False
+        self._chat.composer.set_web(on)
+
+
+    def _on_web_toggled(self, on: bool) -> None:
+        try:
+            stored = self._controller.set_web_search(on)
+        except FukaiError as exc:
+            self.show_notice(exc.as_notice())
+            stored = False
+        if not stored:
+            if on:
+                self.show_notice(Notice.info("Najprv vyber model.",
+                                             hint="Hľadanie na webe je vlastnosť chatu - bez modelu ho nemá kam uložiť."))
+            self._sync_web()

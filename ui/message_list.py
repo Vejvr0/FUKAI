@@ -1,5 +1,7 @@
 from __future__ import annotations
+from html import escape
 from math import ceil
+from urllib.parse import urlparse
 from PyQt6.QtWidgets import (
     QFrame, QHBoxLayout, QVBoxLayout, QLabel, QScrollArea, QTextBrowser, QToolButton, QWidget
 )
@@ -13,7 +15,8 @@ from ui.constants import (
     MSG_CHIP_HEIGHT, MSG_CHIP_SPACING,
     AVATAR_SIZE, BOX_MARGIN, BUBBLE_MAX_RATIO, CARET, CODE_HEAD_HEIGHT, CODE_MAX_HEIGHT,
     CODE_NO_LANGUAGE, COMPOSER_MAX_WIDTH, COPY_DONE_LABEL, COPY_LABEL, COPY_RESET_MS, ICO,
-    LINE_HEIGHT, MESSAGE_SPACING, STICK_MARGIN, STREAM_FLUSH_MS
+    LINE_HEIGHT, MESSAGE_SPACING, STICK_MARGIN, STREAM_FLUSH_MS, WEB_CHIP_LABEL, WEB_CHIP_TOOLTIP,
+    WEB_SOURCES_LABEL
 )
 from ui.formatting import answer_meta
 from ui.markdown import MD_FEATURES, PartKind, code_html, split_markdown, style_tables
@@ -259,14 +262,29 @@ class _MessageChip(QFrame):
         super().mouseReleaseEvent(event)
 
 
+def _web_chip() -> QFrame:
+    """„Web“ nad otázkou - pri nej bolo zapnuté hľadanie (13d). Neklikateľný, zdroje sú pod odpoveďou."""
+    chip = QFrame()
+    chip.setObjectName("msgChip")
+    chip.setProperty("web", True)
+    chip.setFixedHeight(MSG_CHIP_HEIGHT)
+    chip.setToolTip(WEB_CHIP_TOOLTIP)
+    label = QLabel(WEB_CHIP_LABEL)
+    label.setObjectName("webChipText")
+    row = QHBoxLayout(chip)
+    row.setContentsMargins(10, 0, 10, 0)
+    row.addWidget(label)
+    return chip
+
+
 class _UserMessage(QWidget):
-    """Bublina s otázkou a nad ňou čipy príloh. Správa bez textu (iba príloha) bublinu
-    nedostane vôbec - prázdna bublina vyzerá ako chyba."""
+    """Bublina s otázkou a nad ňou čipy príloh (a „Web“). Správa bez textu (iba príloha)
+    bublinu nedostane vôbec - prázdna bublina vyzerá ako chyba."""
 
     preview_requested = pyqtSignal(int)
 
 
-    def __init__(self, text: str, attachments: list[dict] | None = None,
+    def __init__(self, text: str, attachments: list[dict] | None = None, web: bool = False,
                  parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.text: _TextView | None = None
@@ -275,12 +293,14 @@ class _UserMessage(QWidget):
         column.setContentsMargins(0, 0, 0, 0)
         column.setSpacing(MSG_CHIP_SPACING)
 
-        if attachments:
+        if attachments or web:
             chips = QHBoxLayout()
             chips.setContentsMargins(0, 0, 0, 0)
             chips.setSpacing(MSG_CHIP_SPACING)
             chips.addStretch(1)
-            for item in attachments:
+            if web:
+                chips.addWidget(_web_chip())
+            for item in attachments or ():
                 chip = _MessageChip(item["title"], item.get("id"))
                 chip.clicked.connect(self.preview_requested)
                 chips.addWidget(chip)
@@ -320,10 +340,23 @@ class _AnswerMessage(QWidget):
         self._meta = QLabel()
         self._meta.setObjectName("answerMeta")
         self._meta.hide()
+        self._status = QLabel()                     # „Hľadám na webe…“ pred prvým tokenom
+        self._status.setObjectName("answerStatus")
+        self._status.hide()
+        self._sources = QLabel()                    # zdroje z webu pod odpoveďou
+        self._sources.setObjectName("answerSources")
+        self._sources.setTextFormat(Qt.TextFormat.RichText)
+        self._sources.setWordWrap(True)
+        self._sources.setOpenExternalLinks(True)    # QDesktopServices.openUrl - prehliadač
+        self._sources.linkHovered.connect(self._sources.setToolTip)
+        self._sources.hide()
+        self._source_rows: list[dict] = []
 
         self._body = QVBoxLayout()
         self._body.setContentsMargins(0, 4, 0, 0)
         self._body.setSpacing(8)
+        self._body.addWidget(self._status)
+        self._body.addWidget(self._sources)
         self._body.addWidget(self._meta)
         row = QHBoxLayout(self)
         row.setContentsMargins(0, 0, 0, 0)
@@ -353,7 +386,10 @@ class _AnswerMessage(QWidget):
     def show_answer(self, data: dict) -> None:
         self._flush_timer.stop()
         self._pending.clear()
+        self.set_status("")
         self._build(data.get("text", ""))
+        self._source_rows = list((data.get("web") or {}).get("sources") or [])
+        self._render_sources()
         meta = answer_meta(data)
         self._meta.setText(meta)
         self._meta.setVisible(bool(meta))
@@ -366,19 +402,45 @@ class _AnswerMessage(QWidget):
         for part in self._parts:
             if isinstance(part, (_CodeBlock, _TableBox)):
                 part.set_theme(theme)
+        self._render_sources()                      # farba odkazov je v HTML
         self.fit(self._width)
+
+
+    def set_status(self, text: str) -> None:
+        self._status.setText(text)
+        self._status.setVisible(bool(text))
+
+
+    def _render_sources(self) -> None:
+        """Názvy a adresy sú z cudzích stránok - do HTML idú len escapované a odkazom
+        sa stane iba http(s) adresa."""
+        rows = []
+        link = THEMES[self._theme]["accent_strong"]
+        for source in self._source_rows:
+            url = str(source.get("url") or "")
+            title = escape(str(source.get("title") or url))
+            label = f"[{source.get('n', len(rows) + 1)}] {title}"
+            domain = urlparse(url).netloc.removeprefix("www.")
+            if urlparse(url).scheme in ("http", "https"):
+                label = f'<a href="{escape(url, quote=True)}" style="color: {link}; text-decoration: none;">{label}</a>'
+            rows.append(f"{label} · {escape(domain)}" if domain else label)
+        if rows:
+            self._sources.setText(f"<b>{WEB_SOURCES_LABEL}</b><br>" + "<br>".join(rows))
+        self._sources.setVisible(bool(rows))
 
 
     def start(self, caret_color: str) -> None:
         self._clear()
         self.text = _TextView("answerText")
-        self._body.insertWidget(0, self.text)
+        self._body.insertWidget(self._body.indexOf(self._status) + 1, self.text)
         self.text.set_plain("")
         self.text.show_caret(caret_color)
         self.fit(self._width)
 
 
     def append(self, piece: str) -> None:
+        if self._status.isVisible():
+            self.set_status("")
         self._pending.append(piece)
         if not self._flush_timer.isActive():
             self._flush_timer.start()
@@ -479,16 +541,16 @@ class MessageList(QScrollArea):
                 self._add(answer)
                 answer.show_answer(data)
             else:
-                user = _UserMessage(data.get("text", ""), message.get("attachments"))
+                user = _UserMessage(data.get("text", ""), message.get("attachments"), bool(data.get("web")))
                 user.preview_requested.connect(self.preview_requested)
                 self._add(user)
         self._stick = True
     
     
-    def begin_turn(self, question: str, attachments: list[dict] | None = None) -> None:
+    def begin_turn(self, question: str, attachments: list[dict] | None = None, web: bool = False) -> None:
         if self._turn is not None:
             return
-        user = _UserMessage(question, attachments)
+        user = _UserMessage(question, attachments, web)
         answer = _AnswerMessage(self._avatar, self._theme)
         self._add(user)
         self._add(answer)
@@ -500,6 +562,11 @@ class MessageList(QScrollArea):
     def append_token(self, piece: str) -> None:
         if self._turn is not None:
             self._turn[1].append(piece)
+
+
+    def set_status(self, text: str) -> None:
+        if self._turn is not None:
+            self._turn[1].set_status(text)
     
     
     def finish_turn(self, answer: dict) -> None:

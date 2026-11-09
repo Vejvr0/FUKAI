@@ -1,5 +1,5 @@
 from __future__ import annotations
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from PyQt6.QtCore import QObject, pyqtSignal
 from core.context import HistoryItem, with_attachments
 from core.hardware import HardwareProfile
@@ -32,6 +32,7 @@ class _Turn:
     web_job: int | None = None
     web_query: str | None = None
     sources: list = field(default_factory=list)
+    web_status: str = ""                    # posledný priebeh - pre návrat do chatu počas hľadania
 
 
 class ChatController(QObject):
@@ -40,7 +41,7 @@ class ChatController(QObject):
     chats_changed = pyqtSignal(object)
     loading_started = pyqtSignal(str)
     loading_finished = pyqtSignal()
-    turn_started = pyqtSignal(str, object)
+    turn_started = pyqtSignal(str, object, bool)     # otázka, prílohy, web
     token = pyqtSignal(str)
     turn_finished = pyqtSignal(object)
     turn_rolled_back = pyqtSignal(str)
@@ -126,9 +127,12 @@ class ChatController(QObject):
         
         turn = self._turn
         if turn is not None and turn.chat_id == chat_id:
-            self.turn_started.emit(turn.question, [{"title": a.title} for a in turn.attachments])
+            self.turn_started.emit(turn.question, [{"title": a.title} for a in turn.attachments],
+                                   turn.web_query is not None)
             if turn.parts:
                 self.token.emit("".join(turn.parts))
+            elif turn.web_status:
+                self.web_progress.emit(turn.web_status)
     
     
     def select_model(self, model_id: int) -> None:
@@ -184,6 +188,26 @@ class ChatController(QObject):
         )
 
 
+    def web_search(self) -> bool:
+        """Stav prepínača Web v zobrazenom chate (sticky, §7.2). Bez modelu nie sú vlastnosti → vypnutý."""
+        props = self.properties()
+        return props is not None and props.chat.web_search
+
+
+    def set_web_search(self, on: bool) -> bool:
+        """Zapíše prepínač do vlastností chatu, v novom chate do draftu. False = niet kam
+        zapísať (chat bez modelu). Počas ťahu sa nemení - zapisoval by sa do vlastností,
+        ktoré ťah už má prečítané, a nový chat by vznikol so starými."""
+        if self.busy:
+            raise RuntimeError("prepínač webu sa počas generovania meniť nedá")
+        props = self.properties()
+        if props is None:
+            return False
+        if props.chat.web_search != on:
+            self.apply_properties(replace(props, chat=replace(props.chat, web_search=on)))
+        return True
+
+
     def apply_properties(self, props: ChatProperties) -> None:
         if self._chat_id is None:
             self._draft = props
@@ -219,12 +243,14 @@ class ChatController(QObject):
 
         turn = _Turn(self._view, self._chat_id, model["id"], model["title"], props, question, history, attachments)
         self._turn = turn
-        self.busy_changed.emit(True)
-        self.turn_started.emit(question, [{"title": item.title} for item in attachments])
-        
+        # Hľadanie a načítanie modelu bežia naraz, generuje sa až keď sú hotové obe.
         if question and props.chat.web_search and self._settings.current.web_search_enabled:
             turn.web_query = question
             turn.web_job = self._web.search(question)
+        self.busy_changed.emit(True)
+        self.turn_started.emit(question, [{"title": item.title} for item in attachments],
+                               turn.web_query is not None)
+
         if self._loaded is None or self._loaded.clamped() != props.load.clamped():
             turn.loading = True
             self.loading_started.emit(model["title"])
@@ -298,15 +324,25 @@ class ChatController(QObject):
     
     def _on_web_progress(self, job_id: int, text: str) -> None:
         turn = self._web_turn(job_id)
-        if turn is not None and self._visible(turn):
+        if turn is None:
+            return
+        turn.web_status = text
+        if self._visible(turn):
             self.web_progress.emit(text)
+
+
+    def _web_done(self, turn: _Turn) -> None:
+        turn.web_job = None
+        turn.web_status = ""
+        if self._visible(turn):
+            self.web_progress.emit("")      # stav v bubline zmizne, ďalej čaká už len na model
     
     
     def _on_web_ready(self, job_id: int, sources: list) -> None:
         turn = self._web_turn(job_id)
         if turn is None:
             return
-        turn.web_job = None
+        self._web_done(turn)
         turn.sources = list(sources)
         self._generate_when_ready()
     
@@ -315,7 +351,7 @@ class ChatController(QObject):
         turn = self._web_turn(job_id)
         if turn is None:
             return
-        turn.web_job = None
+        self._web_done(turn)
         self.notice.emit(error.as_notice())
         self._generate_when_ready()
 
@@ -356,12 +392,23 @@ class ChatController(QObject):
             },
             "dropped": result.dropped,
         }
+        # Ukladá sa len dopyt a zdroje, ktoré model naozaj dostal - text stránok žije len v ťahu
+        # (rozhodnutie autora). Otázka nesie príznak pre čip „Web“, aj keď hľadanie zlyhalo.
+        used = set(result.web_used)
+        if used:
+            answer["web"] = {
+                "query": turn.web_query,
+                "sources": [{"n": s.n, "title": s.title, "url": s.url} for s in turn.sources if s.n in used],
+            }
+        question_data = {"text": turn.question}
+        if turn.web_query is not None:
+            question_data["web"] = True
         files = [{"title": item.title, "content": item.text} for item in turn.attachments]
         new_chat = None
         if turn.chat_id is None:
             new_chat = (turn.model_id, self._title(turn), turn.props.to_dict())
         try:
-            chat_id = self._database.add_turn(turn.chat_id, {"text": turn.question}, answer,
+            chat_id = self._database.add_turn(turn.chat_id, question_data, answer,
                                         answer_tokens=result.completion_tokens, new_chat=new_chat,
                                         attachments=files)
         except FukaiError as exc:

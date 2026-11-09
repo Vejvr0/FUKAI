@@ -139,7 +139,7 @@ V `../llama-chatbot/` je starší prototyp toho istého nápadu (PyQt6 + llama-c
 
 ## 6. Architektúra
 
-Stav 2026-11-09 (aktualizované podľa repa; `web_search.py` pribudne v kroku 13). Hranice: `core/`, `storage/` a `extensions/` nevedia o Qt; `ui/` služby (`*_service`, `ChatController`, `ModelLibrary`) nevedia o widgetoch; widgety nevedia o databáze – prepája ich `MainWindow`.
+Stav 2026-11-09 (aktualizované podľa repa, vrátane kroku 13). Hranice: `core/`, `storage/` a `extensions/` nevedia o Qt; `ui/` služby (`*_service`, `ChatController`, `ModelLibrary`) nevedia o widgetoch; widgety nevedia o databáze – prepája ich `MainWindow`.
 
 ```
 FUKAI/
@@ -160,7 +160,7 @@ FUKAI/
 │   └── database.py            # Database: models, chats, content, properties, attachments
 ├── extensions/                # bez Qt, vracajú len doménové chyby
 │   ├── file_parser.py         # txt/md/csv/json/kód, PDF, xlsx, docx → text
-│   └── web_search.py          # krok 13: ddgs + trafilatura
+│   └── web_search.py          # ddgs + requests + trafilatura → zdroje (krok 13)
 ├── ui/
 │   ├── application.py         # QApplication, štart (splash), vlastní služby, shutdown()
 │   ├── splash.py
@@ -169,6 +169,7 @@ FUKAI/
 │   ├── llm_service.py         # jediné vlákno pre model (LlmWorker)
 │   ├── workers.py             # LlmWorker, ImportWorker, worker príloh
 │   ├── attachments.py         # AttachmentService – extrakcia vo vlastnom vlákne
+│   ├── web_service.py         # WebService – hľadanie na webe vo vlastnom vlákne
 │   ├── model_library.py       # sken, import, mazanie modelov
 │   ├── settings_store.py      # jediná živá kópia AppSettings
 │   ├── sidebar.py             # taby, zoznam chatov, menu ⋯
@@ -891,7 +892,7 @@ Platí teda pravidlo: **vnútri `transaction()` sa volá `conn.execute()`, nikdy
     Pasce, ktoré to stálo: chýbajúci `setObjectName("chip")` (QSS sa nechytilo, čip bol bez pozadia aj zaoblenia); `icon("×")` namiesto `icon("x")` → `FileNotFoundError` pri každom čipe; `chip._reflow()` namiesto `self._reflow()` → výnimka v slote zhodila proces; `self._chips.get()` namiesto `.pop()` nechal zmazaný widget v slovníku; `_reflow(force=True)` v `resizeEvent` sa v composeri zacyklil; **SVG ✕ pri 10 px je kocka** (ťah 0,8 px, guľaté konce zmiznú) – krížik je preto text, ako v dialógoch.
     **Kúsok 12e (2026-11-09):** čipy príloh sú nad bublinou otázky - v rozpísanom ťahu bez možnosti kliknúť, v histórii klikateľné (náhľad textu). **Správa bez textu bublinu nedostane vôbec**, zostanú len čipy; prázdna bublina vyzerala ako chyba. Text príloh sa pri otvorení chatu stále nenačítava (§12a), náhľad si ho dotiahne až pri kliknutí cez `Database.get_attachment(id)`. `ChipName` (skracovanie názvu v strede) je spoločná pre composer aj históriu - preto sa z `_Name` stala verejná trieda v `ui/attachment_bar.py`. `turn_started` nesie okrem otázky aj zoznam názvov príloh, takže čipy vidno hneď pri odoslaní; `Composer.begin_turn` má stále jeden parameter, lebo Qt slotu s menej parametrami nadbytočné zahodí.
     Neoverené: správanie na macOS, veľmi veľké PDF (stovky strán) a súbeh importu modelu s extrakciou prílohy.
-13. [ ] **Web rozšírenie** – návrh 2026-11-09, rozhodnutia autora v poslednom bode.
+13. [x] **Web rozšírenie – hotové 2026-11-09** (kúsky 13a–13e nižšie). Návrh 2026-11-09, rozhodnutia autora v poslednom bode.
     - **Tok:** odoslanie so zapnutým Web → **súbežne** vyhľadávanie (vlastné vlákno) a načítanie modelu, ak treba → `ddgs` vráti 5 výsledkov → 3 najlepšie stránky sa stiahnu paralelne (`requests`, timeout, strop veľkosti) a `trafilatura` z nich vytiahne text, zlyhaná stránka → úryvok z vyhľadávača → zdroje sa orežú na rozpočet kontextu → generovanie. Model si web nevolá sám (§7).
     - **Moduly:** `extensions/web_search.py` (bez Qt, `search` / `fetch_text` / `gather(query, cancel)`, chyby len `WebSearchError`), `WebService` vo vlastnom vlákne (vzor `AttachmentService`), `core/context.with_web()` – zdroje do **tej istej správy** ako otázka (striedanie rolí, ako prílohy) + inštrukcia citovať `[1]`.
     - **Stop počas hľadania** zruší hľadanie aj ťah (`threading.Event`, ako import). **Prepínač** zapisuje `properties.chat.web_search` (sticky, §7.2), v novom chate do draftu.
@@ -910,8 +911,8 @@ Platí teda pravidlo: **vnútri `transaction()` sa volá `conn.execute()`, nikdy
     | 13a | `extensions/web_search.py` – hľadanie, stiahnutie, výber zdrojov; konštanty `WEB_*`; pin `ddgs` + `primp` | ✅ autor prepísal, Claude opravil 1 tichú chybu |
     | 13b | `WebService` vo vlastnom vlákne + controller: hľadanie súbežne s načítaním modelu, Stop počas hľadania, zlyhanie → toast a odpoveď bez webu | ✅ autor prepísal, Claude opravil 4 chyby |
     | 13c | `core/context.with_web()` – zdroje a inštrukcia citovať do správy s otázkou, orezanie na rozpočet kontextu | ✅ Claude napísal aj prepísal do repa (na žiadosť autora) |
-    | 13d | UI: stav v bubline, čip „Web“, zdroje pod odpoveďou, meta „· N zdroje“, uloženie do `content.data` | |
-    | 13e | prepínač Web → `properties.chat.web_search` (sticky, draft v novom chate) | |
+    | 13d | UI: stav v bubline, čip „Web“, zdroje pod odpoveďou, meta „· N zdroje“, uloženie do `content.data` | ✅ Claude (na žiadosť autora) |
+    | 13e | prepínač Web → `properties.chat.web_search` (sticky, draft v novom chate) | ✅ Claude (na žiadosť autora) |
 
     **Kúsok 13a – `extensions/web_search.py`** (2026-11-09, Claude napísal a otestoval v scratchpade `run13`, autor prepísal, Claude opravil chyby, self-test prešiel nad repom). Self-test `python -m extensions.web_search [dopyt]`: 12 offline kontrol (výber zdrojov, orezanie, termín sťahovania, zrušenie, chyby) + živý dopyt. Rozhranie: `search(query) -> list[SearchHit]`, `fetch_text(url, cancel) -> str | None`, `gather(query, *, cancel, progress) -> list[WebSource]`, `cut_text(text, limit)`. Rozhodnutia:
     - **Von ide len `WebSearchError`**: výpadok, obmedzenie DuckDuckGo aj **žiadny výsledok** (odpoveď by bola bez webu rovnako). `ddgs` sa importuje lenivo vo funkcii – appka sa spustí aj bez knižnice.
@@ -953,6 +954,20 @@ Platí teda pravidlo: **vnútri `transaction()` sa volá `conn.execute()`, nikdy
     - **Namerané (M2, Gemma 3 4B, predvolené vlastnosti):** dlhé zdroje 296 + 5788 + 5930 znakov → prompt 2891 / 3008 tokenov, bez pretečenia; otázka na dekana FEIT → 8,1 s celkom, odpoveď s citáciou. Či model cituje, je vlastnosť modelu, nie kódu – pri krátkych faktických otázkach citoval vždy, pri dlhom výklade len s pokynom na konci.
     - Pasca pri teste: riadok priebehu „Čítam 3 stránky…“ sa v konzole nevypísal, lebo prišiel počas načítania modelu (`suppress_stdout_stderr`, §8 krok 9 – test na PC 1). Signál prišiel, stratil sa len výpis.
     - **Chyba v zápise ALMANACu (Claude, 2026-11-09):** pri doplnení pasce kúsku 13a skript vložil text za riadok „Pin:“ a zvyšok súboru nepripojil – zmizol krok 14, „Prečo sa začína jadrom“, §8.1, §8.2, §9 a §10. Obnovené zo stavu na začiatku session, overené porovnaním riadok po riadku. Poučenie pre úpravy skriptom: po zápise porovnať počet riadkov / `git diff --stat`, nie len to, že `assert` prešiel.
+    **Kúsky 13d + 13e – UI a prepínač** (2026-11-09, Claude napísal, otestoval a na žiadosť autora prepísal do repa; robené spolu, lebo zdieľajú tie isté signály). Súbory: `ui/chat_controller.py`, `ui/message_list.py`, `ui/chat_view.py`, `ui/composer.py`, `ui/main_window.py`, `ui/formatting.py` (`sources_text`, meta), `ui/constants.py` (`WEB_CHIP_*`, `WEB_SOURCES_LABEL`, `WEB_BUTTON_*`), `ui/style.py`. Test `t18/web_ui.py` – 30 kontrol v skutočnej appke (offscreen) s Qwenom a falošným hľadaním + snímky oboch tém; regresia `t16/web_flow.py` 29/29, mazanie počas odpovede, `t17/live_answer.py`. Rozhodnutia:
+    - **Uloženie (bez zmeny schémy):** otázka `content.data.web = true`, keď sa pri nej hľadalo – **aj keď hľadanie zlyhalo** (čip hovorí „bolo zapnuté“, nie „našlo sa“). Odpoveď `content.data.web = {query, sources: [{n, title, url}]}` **len so zdrojmi z `web_used`** a len keď sa nejaký zmestil; text stránok sa neukladá (rozhodnutie autora).
+    - **`turn_started(otázka, prílohy, web)`** – tretí argument, aby čip „Web“ bol vidno hneď pri odoslaní aj po návrate do chatu s bežiacou odpoveďou. `Composer.begin_turn` má ďalej jeden parameter, PyQt nadbytočné zahodí.
+    - **Stav v bubline** (`QLabel#answerStatus`, kurzíva) nad blikajúcim kurzorom: „Hľadám na webe…“ → „Čítam 3 stránky…“. Po skončení hľadania controller pošle **prázdny stav**, inak by počas načítania modelu alebo spracovania promptu visel zastaraný „Čítam…“. Skryje sa aj prvým tokenom. Controller si posledný stav pamätá (`_Turn.web_status`) a pri návrate do chatu počas hľadania ho pošle znova.
+    - **Zdroje pod odpoveďou** = jeden `QLabel` s rich textom („Zdroje“, `[n] názov · doména`), `setOpenExternalLinks(True)` → prehliadač cez `QDesktopServices`, celá adresa v tooltipe (`linkHovered`). **Názov a adresa sú z cudzej stránky:** do HTML idú len cez `html.escape` a odkazom sa stane iba `http(s)` adresa – overené na titulku `Zlý <b>titul</b> & spol` a adrese `javascript:…`. Farba odkazu je zapečená v HTML (`accent_strong`), preto sa pri zmene témy prerenderuje.
+    - **Meta riadok** „· 3 zdroje“ (`sources_text`: 1 zdroj / 2–4 zdroje / 5+ zdrojov). Citácie `[n]` v texte odpovede nie sú klikateľné – zostáva otvorené.
+    - **Čip „Web“** je `QFrame#msgChip[web="true"]` pred čipmi príloh, neklikateľný (zdroje sú pod odpoveďou).
+    - **Prepínač (13e) zapisuje hneď**, bez tlačidla Použiť – je to jedno kliknutie ako v šablóne a §7.2 bod 4 hovorí, že `web_search` platí od ďalšieho generovania. `ChatController.set_web_search()` → `apply_properties()`, v novom chate do draftu. Zapnuté tlačidlo má pozadie `$send` (ako Odoslať) a ikonu vo farbe `send_text`; dovtedy `:checked` štýl neexistoval a zapnutie by nebolo vidno.
+    - **Stav tlačidla sa číta z vlastností zobrazeného chatu** pri každom `model_changed` (ide po `new_chat`, `open_chat`, `select_model` aj zmazaní modelu). Dôsledky: nový chat začína vypnutý (`WEB_SEARCH_DEFAULT`), **výmena modelu prepínač vypne** – je to reset celých vlastností podľa §7.1, nie nové pravidlo.
+    - **Počas ťahu je tlačidlo vypnuté** (rovnako ako výber modelu, §7.2 bod 6). Inak by sa v novom chate prepínač zapísal do draftu, ale chat by vznikol s vlastnosťami, ktoré si ťah prečítal pri odoslaní.
+    - **Globálne vypnutie nemení vlastnosti chatu (§7.1)** – `Composer.set_features` tlačidlo skryje a vypne **bez signálu** (`set_web`). Predtým volal `setChecked(False)`, čo by s 13e zapísalo `web_search=False` do zobrazeného chatu. Po opätovnom zapnutí sa stav načíta z chatu znova (overené).
+    - **Chat bez modelu** nemá vlastnosti, kam by sa prepínač zapísal → info toast „Najprv vyber model.“ a tlačidlo sa vráti.
+    - Dočasný `_on_web_preview` (toast „pripravuje sa“ z kúska 8) je zmazaný.
+    - **Neoverené:** živé okno na `cocoa` a Windows (len offscreen snímky), klik na odkaz v skutočnom prehliadači.
 14. [ ] Doladenie a distribúcia: PyInstaller, **vlastná Windows inštalačka v C#** (vrátane CUDA bez samostatného Toolkitu, §10), overenie otvorených bodov z krokov 9 a 12 na oboch OS
 
 ### Prečo sa začína jadrom, a nie UI ani nastaveniami
