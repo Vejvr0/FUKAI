@@ -349,11 +349,24 @@ class Sidebar(QFrame):
 
         colors = THEMES[self._theme]
         rename = menu.addAction(icon("pencil", colors["text"], 16), "Premenovať")
-        rename.triggered.connect(lambda: QTimer.singleShot(0, row.begin_edit))
         delete = menu.addAction(icon("trash", colors["danger"], 16), "Vymazať")
-        delete.triggered.connect(lambda: QTimer.singleShot(0, lambda: self.chat_delete_requested.emit(chat_id)))
 
         row.set_menu_open(True)
-        menu.exec(row.mapToGlobal(QPoint(row.width() - CHAT_MENU_WIDTH, row.height())))
-        row.set_menu_open(False)
+        chosen = menu.exec(row.mapToGlobal(QPoint(row.width() - CHAT_MENU_WIDTH, row.height())))
         menu.deleteLater()
+        # Kým beží exec(), zoznam mohol vzniknúť nanovo (dobehla odpoveď → chats_changed) a pôvodný
+        # riadok je zmazaný – siahnuť naň zhodí appku. Akcia sa preto vykoná až tu, po návrate
+        # z menu, a riadok sa hľadá znova podľa id (zmazaný chat už riadok nemá).
+        row = self._rows.get(chat_id)
+        if row is not None:
+            row.set_menu_open(False)
+        if chosen is delete:
+            self.chat_delete_requested.emit(chat_id)
+        elif chosen is rename and row is not None:
+            QTimer.singleShot(0, lambda: self._begin_edit(chat_id))
+
+
+    def _begin_edit(self, chat_id: int) -> None:
+        row = self._rows.get(chat_id)
+        if row is not None:
+            row.begin_edit()

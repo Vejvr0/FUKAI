@@ -819,3 +819,27 @@ V ALMANAC-u zostalo pri každom kúsku jednovetné poučenie, tu je úplný zozn
 - `__all__` bez `answer_meta` – rovnaká pasca ako `PASE_SETTINGS` (kúsok 3). Ticho.
 - Kozmeticky: `_UserMessages` vrátené na `_UserMessage` (jedna správa, ako `_AnswerMessage`).
 
+## 2026-11-09 – MacBook: kontrola po práci na PC, pád pri mazaní chatu
+
+**Stav na začiatku:** `b85788e` (prílohy). Na PC 1 medzitým pribudli kúsky 6b, 3b, 7–10 a krok 12 (prílohy); ALMANAC prerobený.
+
+### Hotové
+
+**Pád pri mazaní chatu počas generovania (🔴 priorita z 2026-11-08) – nájdený a opravený.** Päť scenárov mazania počas odpovede so skutočným Qwenom (zobrazený chat, iný chat, nový chat, chat s odpoveďou, odchod a návrat) prešlo bez pádu – chyba nebola v controlleri. Reprodukovaná až v menu ⋯: akcia „Vymazať“ cez `singleShot(0)` sa vykonala ešte vo vnorenej slučke `menu.exec()`, prestavba zoznamu zmazala riadok a `row.set_menu_open(False)` po návrate siahol na zmazaný objekt. Oprava v `ui/sidebar.py`: akcia z návratovej hodnoty `exec()`, riadok sa po návrate hľadá znova podľa id. Test `t15/menu_crash.py` 4 scenáre OK, na pôvodnom kóde padá. Čaká na overenie v živom okne na PC 1.
+
+**Prehľad kódu na opakujúce sa pasce (§8.2)** v nových moduloch (kúsky 7–12): `__all__`, `deleteLater` bez `hide`, `QColor("rgba…")`, 32-bitové signály, práca s widgetom po `exec()` – okrem menu ⋯ nič.
+
+### Zistenia, ktoré stoja za zápis
+
+| Zistenie | Prečo bolo zradné |
+|---|---|
+| `deleteLater` sa spracuje aj **vo vnorenej slučke** `menu.exec()` | widget zachytený pred `exec()` môže byť po návrate zmazaný; pád len keď slučka stihne spracovať časovač aj mazanie – preto „len počas generovania“ |
+| `QAction.trigger()` v teste ≠ klik | `menu.exec()` vráti zvolenú akciu len pri skutočnom kliknutí (`QTest.mouseClick` na `actionGeometry`) |
+| testy mazania cez handler priamo | obišli menu, takže chybu neukázali – test musí ísť cestou, ktorou ide používateľ |
+
+### Nedoriešené do ďalšej session
+
+1. **Commit** opravy `ui/sidebar.py` + ALMANAC + SESSIONS (autor) a overenie v živom okne na PC 1: dlhá odpoveď → menu ⋯ iného chatu → Vymazať; a menu otvorené vo chvíli, keď odpoveď dobehne.
+2. **Krok 13 – web rozšírenie** (posledná funkcia z §2).
+3. Otvorené body z ALMANAC §8 krok 9 a krok 12 (toast cez prvú kartu, neoverené na macOS, CUDA bez Toolkitu, drobnosti).
+
