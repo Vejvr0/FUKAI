@@ -19,6 +19,7 @@ __all__ = [
     "GenerationError",
     "ContextOverflowError",
     "StorageError",
+    "DatabaseCorruptError",
     "AttachmentError",
     "UnsupportedAttachmentError",
     "AttachmentTooLargeError",
@@ -182,6 +183,11 @@ class ContextOverflowError(GenerationError):
 class StorageError(FukaiError):
     default_message = "Prístup k uloženým chatom zlyhal."
     default_hint = "Skontroluj, či je priestor na disku a práva k dátovému adresáru."
+    
+
+class DatabaseCorruptError(StorageError):
+    default_message = "Databáza chatov je poškodená."
+    default_hint = "Zatvor FUKAI a súbor fukai.db premenuj alebo presuň inam. Pri ďalšom štarte vznikne nová, prázdna databáza - chaty z poškodenej DB v nej nebudú, modely áno."
 
 
 # --- Prílohy ---------------------------------------------------------------

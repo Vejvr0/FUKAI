@@ -35,7 +35,8 @@ class GenerateRequest:
     question: str
     sampling: SamplingParams
     system_prompt: str = ""
-    web: tuple = ()                         # (číslo, názov, adresa, text) – core.context.WebItem
+    web: tuple = ()
+    attachments: tuple = ()
     
     
 @dataclass(frozen=True)
@@ -49,6 +50,7 @@ class GenerationResult:
     first_token_s: float | None = None
     total_s: float = 0.0
     web_used: list[int] = field(default_factory=list)
+    attachments: list = field(default_factory=list)
     
     
     @property
@@ -115,10 +117,10 @@ class LlmWorker(QObject):
             n_ctx=n_ctx,
             max_tokens=request.sampling.max_tokens,
             count=engine.count_tokens,
-            web=request.web
+            web=request.web,
+            attachments=request.attachments
         )
-        done = dict(counted=plan.counted, dropped=plan.dropped, prompt_tokens=plan.prompt_tokens,
-                    web_used=plan.web_used)
+        done = dict(counted=plan.counted, dropped=plan.dropped, prompt_tokens=plan.prompt_tokens, web_used=plan.web_used, attachments=plan.attachments)
         
         if self._cancelled == request.id:
             return GenerationResult("", FinishReason.STOPPED, total_s=time.monotonic() - started, **done)

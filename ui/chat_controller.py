@@ -1,4 +1,5 @@
 from __future__ import annotations
+import logging
 from dataclasses import dataclass, field, replace
 from PyQt6.QtCore import QObject, pyqtSignal
 from core.context import HistoryItem, with_attachments
@@ -7,13 +8,15 @@ from core.llm_engine import FinishReason
 from core.settings import ChatProperties, LoadParams, ModelMeta
 from core.errors import FukaiError, Notice
 from storage.database import Database
-from ui.constants import TITLE_WORDS, NEW_CHAT_TITLE
+from ui.constants import NEW_CHAT_TITLE, STATUS_ATTACHMENTS, STATUS_SOURCES, TITLE_WORDS
 from ui.llm_service import LlmService
 from ui.web_service import WebService
 from ui.workers import GenerationResult
 from ui.settings_store import SettingsStore
 
 __all__ = ["ChatController"]
+
+log = logging.getLogger(__name__)
 
 
 @dataclass
@@ -32,7 +35,7 @@ class _Turn:
     web_job: int | None = None
     web_query: str | None = None
     sources: list = field(default_factory=list)
-    web_status: str = ""                    # posledný priebeh - pre návrat do chatu počas hľadania
+    status: str = ""
 
 
 class ChatController(QObject):
@@ -41,13 +44,13 @@ class ChatController(QObject):
     chats_changed = pyqtSignal(object)
     loading_started = pyqtSignal(str)
     loading_finished = pyqtSignal()
-    turn_started = pyqtSignal(str, object, bool)     # otázka, prílohy, web
+    turn_started = pyqtSignal(str, object, bool)
     token = pyqtSignal(str)
-    turn_finished = pyqtSignal(object)
+    turn_finished = pyqtSignal(object, object)
     turn_rolled_back = pyqtSignal(str)
     notice = pyqtSignal(object)
     model_changed = pyqtSignal(object)
-    web_progress = pyqtSignal(str)
+    turn_status = pyqtSignal(str)                    # stav v bubline, "" = skryť
 
 
     def __init__(self, settings: SettingsStore, hardware: HardwareProfile, database: Database, llm: LlmService, web: WebService, parent: QObject | None = None) -> None:
@@ -113,8 +116,12 @@ class ChatController(QObject):
     
     
     def open_chat(self, chat_id: int) -> None:
-        chat = self._database.get_chat(chat_id)
-        
+        try:
+            chat = self._database.get_chat(chat_id)
+            messages = self._database.get_messages(chat_id) if chat is not None else []
+        except FukaiError as exc:
+            self.notice.emit(exc.as_notice())
+            return
         if chat is None:
             self.notice.emit(Notice.warning("Chat už neexistuje."))
             self.chats_changed.emit(None)
@@ -122,7 +129,7 @@ class ChatController(QObject):
         self._view += 1
         self._chat_id = chat_id
         self._model_id = chat["model_id"]
-        self.chat_opened.emit(chat_id, chat["title"], self._database.get_messages(chat_id))
+        self.chat_opened.emit(chat_id, chat["title"], messages)
         self._emit_model()
         
         turn = self._turn
@@ -131,8 +138,8 @@ class ChatController(QObject):
                                    turn.web_query is not None)
             if turn.parts:
                 self.token.emit("".join(turn.parts))
-            elif turn.web_status:
-                self.web_progress.emit(turn.web_status)
+            elif turn.status:
+                self.turn_status.emit(turn.status)
     
     
     def select_model(self, model_id: int) -> None:
@@ -189,15 +196,11 @@ class ChatController(QObject):
 
 
     def web_search(self) -> bool:
-        """Stav prepínača Web v zobrazenom chate (sticky, §7.2). Bez modelu nie sú vlastnosti → vypnutý."""
         props = self.properties()
         return props is not None and props.chat.web_search
 
 
     def set_web_search(self, on: bool) -> bool:
-        """Zapíše prepínač do vlastností chatu, v novom chate do draftu. False = niet kam
-        zapísať (chat bez modelu). Počas ťahu sa nemení - zapisoval by sa do vlastností,
-        ktoré ťah už má prečítané, a nový chat by vznikol so starými."""
         if self.busy:
             raise RuntimeError("prepínač webu sa počas generovania meniť nedá")
         props = self.properties()
@@ -243,7 +246,6 @@ class ChatController(QObject):
 
         turn = _Turn(self._view, self._chat_id, model["id"], model["title"], props, question, history, attachments)
         self._turn = turn
-        # Hľadanie a načítanie modelu bežia naraz, generuje sa až keď sú hotové obe.
         if question and props.chat.web_search and self._settings.current.web_search_enabled:
             turn.web_query = question
             turn.web_job = self._web.search(question)
@@ -253,6 +255,9 @@ class ChatController(QObject):
 
         if self._loaded is None or self._loaded.clamped() != props.load.clamped():
             turn.loading = True
+            load = props.load
+            log.info("Načítavam model %s · n_ctx %s · n_gpu_layers %s · n_threads %s",
+                     model["title"], load.n_ctx, load.n_gpu_layers, load.n_threads)
             self.loading_started.emit(model["title"])
             self._llm.load(props.load)
         else:
@@ -288,11 +293,15 @@ class ChatController(QObject):
 
     def _generate(self) -> None:
         turn = self._turn
+        turn.status = STATUS_SOURCES if turn.sources else STATUS_ATTACHMENTS if turn.attachments else ""
+        if turn.status and self._visible(turn):
+            self.turn_status.emit(turn.status)
         turn.request_id = self._llm.generate(
-            turn.history, with_attachments(turn.question, [(a.title, a.text) for a in turn.attachments]),
+            turn.history, turn.question,
             sampling=turn.props.sampling,
             system_prompt=turn.props.chat.system_prompt,
-            web=[(s.n, s.title, s.url, s.text) for s in turn.sources]
+            web=[(s.n, s.title, s.url, s.text) for s in turn.sources],
+            attachments=[(a.title, a.text) for a in turn.attachments]
         )
     
     
@@ -306,6 +315,7 @@ class ChatController(QObject):
             return
         turn.loading = False
         self._loaded = turn.props.load
+        log.info("Model načítaný")
         self._database.mark_model_used(turn.model_id)
         self._generate_when_ready()
     
@@ -326,16 +336,16 @@ class ChatController(QObject):
         turn = self._web_turn(job_id)
         if turn is None:
             return
-        turn.web_status = text
+        turn.status = text
         if self._visible(turn):
-            self.web_progress.emit(text)
+            self.turn_status.emit(text)
 
 
     def _web_done(self, turn: _Turn) -> None:
         turn.web_job = None
-        turn.web_status = ""
+        turn.status = ""
         if self._visible(turn):
-            self.web_progress.emit("")      # stav v bubline zmizne, ďalej čaká už len na model
+            self.turn_status.emit("")
     
     
     def _on_web_ready(self, job_id: int, sources: list) -> None:
@@ -375,8 +385,15 @@ class ChatController(QObject):
             self.notice.emit(exc.as_notice())
 
         if result.finish_reason is FinishReason.STOPPED or not result.text:
+            log.info("Odpoveď zastavená, ťah vrátený")
             self._roll_back()
             return
+        cut = [title for title, _, trimmed in result.attachments if trimmed]
+        log.info("Odpoveď: %s · %d tokenov · %s tok/s · prvý token %s s · celkom %.1f s · prompt ~%d · "
+                 "prílohy %d (orezané %d) · zdroje %d/%d · vynechané správy %d", result.finish_reason.value,
+                 result.completion_tokens, f"{result.tokens_per_s:.1f}" if result.tokens_per_s else "-",
+                 f"{result.first_token_s:.2f}" if result.first_token_s is not None else "-", result.total_s,
+                 result.prompt_tokens, len(turn.attachments), len(cut), len(result.web_used), len(turn.sources), len(result.dropped))
 
         answer = {
             "text": result.text,
@@ -392,8 +409,6 @@ class ChatController(QObject):
             },
             "dropped": result.dropped,
         }
-        # Ukladá sa len dopyt a zdroje, ktoré model naozaj dostal - text stránok žije len v ťahu
-        # (rozhodnutie autora). Otázka nesie príznak pre čip „Web“, aj keď hľadanie zlyhalo.
         used = set(result.web_used)
         if used:
             answer["web"] = {
@@ -403,14 +418,12 @@ class ChatController(QObject):
         question_data = {"text": turn.question}
         if turn.web_query is not None:
             question_data["web"] = True
-        files = [{"title": item.title, "content": item.text} for item in turn.attachments]
+        files = [{"title": title, "content": text} for title, text, _ in result.attachments]
         new_chat = None
         if turn.chat_id is None:
             new_chat = (turn.model_id, self._title(turn), turn.props.to_dict())
         try:
-            chat_id = self._database.add_turn(turn.chat_id, question_data, answer,
-                                        answer_tokens=result.completion_tokens, new_chat=new_chat,
-                                        attachments=files)
+            chat_id, attachment_ids = self._database.add_turn(turn.chat_id, question_data, answer, answer_tokens=result.completion_tokens, new_chat=new_chat, attachments=files)
         except FukaiError as exc:
             self.notice.emit(exc.as_notice())
             self._roll_back()
@@ -422,12 +435,19 @@ class ChatController(QObject):
         self._turn = None
         self.busy_changed.emit(False)
         if visible:
-            self.turn_finished.emit(answer)
+            files = [{"id": attachment_id, "title": item.title} for attachment_id, item in zip(attachment_ids, turn.attachments)]
+            self.turn_finished.emit(answer, files)
         if turn.sources and not result.web_used and visible:
             self.notice.emit(Notice.info(
                 "Výsledky z webu sa do kontextu nezmestili.",
                 hint="Odpoveď je bez nich. Zväčši kontext vo Vlastnostiach alebo zníž maximálny počet tokenov odpovede.")
             )
+        if cut and visible:
+            self.notice.emit(Notice.warning(
+                "Príloha sa do kontextu nezmestila celá, model dostal len jej začiatok." if len(cut) == 1
+                else "Prílohy sa do kontextu nezmestili celé, model dostal len ich začiatok.",
+                hint=f"Orezané: {', '.join(cut)}. Celé ich dostane, keď zväčšíš kontext vo Vlastnostiach, znížiš maximálny počet tokenov odpovede alebo pošleš menej príloh."
+            ))
         if result.dropped and visible:
             self.notice.emit(Notice.info(
                 "Staršie správy sa do kontextu modelu nezmestili.",

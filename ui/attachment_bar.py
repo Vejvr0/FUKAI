@@ -1,11 +1,15 @@
 from __future__ import annotations
-from PyQt6.QtCore import QEvent, QSize, Qt, pyqtSignal
-from PyQt6.QtWidgets import QFrame, QGridLayout, QHBoxLayout, QLabel, QToolButton, QWidget
+from math import ceil
+from PyQt6.QtCore import QEvent, QSize, Qt, QTimer, pyqtSignal
+from PyQt6.QtGui import QFontMetricsF
+from PyQt6.QtWidgets import (
+    QFrame, QGridLayout, QHBoxLayout, QLabel, QScrollArea, QSizePolicy, QToolButton, QWidget
+)
 from extensions.file_parser import Attachment
 from ui.constants import (
     CHIP_TRIMMED,
     CHIP_BUTTON, CHIP_CLOSE, CHIP_HEIGHT, CHIP_MIN_WIDTH, CHIP_NAME_MAX, CHIP_NAME_MIN,
-    CHIP_PENDING, CHIP_SPACING
+    CHIP_PENDING, CHIP_ROWS_VISIBLE, CHIP_SPACING
 )
 from ui.formatting import approx_tokens, int_text, tokens_text
 
@@ -21,7 +25,7 @@ class ChipName(QLabel):
 
 
     def sizeHint(self) -> QSize:
-        width = min(self.fontMetrics().horizontalAdvance(self._full), CHIP_NAME_MAX)
+        width = min(ceil(QFontMetricsF(self.font()).horizontalAdvance(self._full)), CHIP_NAME_MAX)
         return QSize(width, super().sizeHint().height())
 
 
@@ -94,7 +98,7 @@ class _Chip(QFrame):
         super().mouseReleaseEvent(event)
 
 
-class AttachmentBar(QWidget):
+class AttachmentBar(QScrollArea):
     removed = pyqtSignal(int)
     preview_requested = pyqtSignal(object)
     changed = pyqtSignal()
@@ -102,24 +106,36 @@ class AttachmentBar(QWidget):
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
+        self.setObjectName("attachmentBar")
+        self.setFrameShape(QFrame.Shape.NoFrame)
+        self.setWidgetResizable(True)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        
         self._chips: dict[int, _Chip] = {}
         self._restored = 0
         self._theme = "light"
-        self._columns = 0
+        self._placed: tuple = ()
 
-        self._grid = QGridLayout(self)
+        content = QWidget()
+        self._grid = QGridLayout(content)
         self._grid.setContentsMargins(0, 0, 0, 0)
         self._grid.setHorizontalSpacing(CHIP_SPACING[0])
         self._grid.setVerticalSpacing(CHIP_SPACING[1])
+        self.setWidget(content)
+        content.setAutoFillBackground(False)
+        self.viewport().setAutoFillBackground(False)
         self.setVisible(False)
 
 
     def add(self, job_id: int, title: str) -> None:
-        chip = _Chip(job_id, title, self)
+        chip = _Chip(job_id, title, self.widget())
         chip.remove_requested.connect(self.remove)
         chip.clicked.connect(self._on_clicked)
         self._chips[job_id] = chip
         self._reflow()
+        QTimer.singleShot(0, lambda: self._reveal(job_id))
         self.changed.emit()
 
 
@@ -127,6 +143,7 @@ class AttachmentBar(QWidget):
         chip = self._chips.get(job_id)
         if chip is not None:
             chip.set_ready(item)
+            self._reflow()
             self.changed.emit()
 
 
@@ -134,25 +151,21 @@ class AttachmentBar(QWidget):
         chip = self._chips.pop(job_id, None)
         if chip is None:
             return
-        chip.hide()                  # bez toho zostane visieť na starom mieste (§8.2)
-        chip.deleteLater()
+        self._drop(chip)
         self._reflow()
         self.removed.emit(job_id)
         self.changed.emit()
 
 
     def attachments(self) -> list[Attachment]:
-        return [chip.item for chip in self._ordered() if chip.item is not None]
+        return [chip.item for chip in self._chips.values() if chip.item is not None]
 
 
     def pending(self) -> int:
-        return sum(1 for chip in self._ordered() if chip.item is None)
+        return sum(1 for chip in self._chips.values() if chip.item is None)
 
 
     def restore(self, items: list[Attachment]) -> None:
-        """Vrátenie ťahu (Stop alebo chyba) - prílohy sa vrátia do baru aj s textom,
-        takže sa nemusia extrahovať znova. Vlastné záporné čísla úloh sa s číslami od
-        služby nikdy nestretnú."""
         for item in items:
             self._restored -= 1
             self.add(self._restored, item.title)
@@ -160,27 +173,33 @@ class AttachmentBar(QWidget):
 
 
     def clear(self) -> None:
-        for job_id in list(self._chips):
-            chip = self._chips.pop(job_id)
-            chip.hide()
-            chip.deleteLater()
+        while self._chips:
+            _, chip = self._chips.popitem()
+            self._drop(chip)
         self._reflow()
         self.changed.emit()
 
 
     def set_theme(self, theme: str) -> None:
-        # Farby čipu aj krížika rieši QSS, netreba nič prekresľovať.
         self._theme = theme
 
 
-    def _ordered(self) -> list[_Chip]:
-        return [self._chips[job_id] for job_id in sorted(self._chips)]
+    def _drop(self, chip: _Chip) -> None:
+        self._grid.removeWidget(chip)
+        chip.hide()
+        chip.deleteLater()
 
 
     def _on_clicked(self, job_id: int) -> None:
         chip = self._chips.get(job_id)
         if chip is not None and chip.item is not None:
             self.preview_requested.emit(chip.item)
+    
+    
+    def _reveal(self, job_id: int) -> None:
+        chip = self._chips.get(job_id)
+        if chip is not None:
+            self.ensureWidgetVisible(chip, 0, 0)
 
 
     def resizeEvent(self, event) -> None:
@@ -189,19 +208,25 @@ class AttachmentBar(QWidget):
 
 
     def _reflow(self) -> None:
-        chips = self._ordered()
+        chips = list(self._chips.values())
         self.setVisible(bool(chips))
         if not chips:
-            self._columns = 0
+            self._placed = ()
             return
-        columns = max(1, min(len(chips), self.width() // CHIP_MIN_WIDTH))
-        if columns == self._columns:
-            return
-        self._columns = columns
         for chip in chips:
-            self._grid.removeWidget(chip)
-        for index, chip in enumerate(chips):
-            self._grid.addWidget(chip, index // columns, index % columns, Qt.AlignmentFlag.AlignLeft)
-        for column in range(self._grid.columnCount()):
-            self._grid.setColumnStretch(column, 1 if column < columns else 0)
-        self.updateGeometry()
+            chip.ensurePolished()
+        cell = max(CHIP_MIN_WIDTH, *(chip.minimumSizeHint().width() for chip in chips))
+        spacing = CHIP_SPACING[0]
+        columns = max(1, min(len(chips), (self.viewport().width() + spacing) // (cell + spacing)))
+        placed = (tuple(self._chips), columns, cell)
+        if placed != self._placed:
+            self._placed = placed
+            for chip in chips:
+                self._grid.removeWidget(chip)
+            for index, chip in enumerate(chips):
+                self._grid.addWidget(chip, index // columns, index % columns)
+            for column in range(max(self._grid.columnCount(), columns + 1)):
+                self._grid.setColumnMinimumWidth(column, cell if column < columns else 0)
+                self._grid.setColumnStretch(column, 1 if column == columns else 0)
+        rows = min(-(-len(chips) // columns), CHIP_ROWS_VISIBLE)
+        self.setFixedHeight(rows * CHIP_HEIGHT + (rows - 1) * CHIP_SPACING[1])

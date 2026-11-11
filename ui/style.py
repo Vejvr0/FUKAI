@@ -412,6 +412,8 @@ _QSS = Template("""
         border-radius: 13px;
     }
     QFrame#chip:hover { background: $chip_hover; }
+    QScrollArea#attachmentBar { background: transparent; border: none; }
+    QScrollArea#attachmentBar QScrollBar:vertical { margin-left: 4px; }
     QLabel#chipName { font-size: 12px; }
     QFrame#msgChip {
         background: $chip; border: 1px solid $line; border-radius: 12px;

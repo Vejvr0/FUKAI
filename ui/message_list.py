@@ -3,7 +3,7 @@ from html import escape
 from math import ceil
 from urllib.parse import urlparse
 from PyQt6.QtWidgets import (
-    QFrame, QHBoxLayout, QVBoxLayout, QLabel, QScrollArea, QTextBrowser, QToolButton, QWidget
+    QFrame, QHBoxLayout, QVBoxLayout, QLabel, QScrollArea, QSizePolicy, QTextBrowser, QToolButton, QWidget
 )
 from PyQt6.QtCore import QEvent, QObject, QSize, Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import (
@@ -178,7 +178,7 @@ class _CodeBlock(QFrame):
         self._copy.setText(COPY_LABEL)
         self._copy.setCursor(Qt.CursorShape.PointingHandCursor)
         self._copy.clicked.connect(self._on_copy)
-        self._reset = QTimer(self)                          # dieťa widgetu, zanikne s ním
+        self._reset = QTimer(self)
         self._reset.setSingleShot(True)
         self._reset.setInterval(COPY_RESET_MS)
         self._reset.timeout.connect(lambda: self._copy.setText(COPY_LABEL))
@@ -231,10 +231,6 @@ class _TableBox(_Body):
 
 
 class _MessageChip(QFrame):
-    """Príloha pri odoslanej správe. Na rozdiel od čipu v composeri sa nedá odobrať -
-    správa je odoslaná. Klikateľný je len vtedy, keď má príloha v databáze svoje id,
-    teda nie počas rozpísaného ťahu."""
-
     clicked = pyqtSignal(int)
 
 
@@ -242,18 +238,28 @@ class _MessageChip(QFrame):
         super().__init__(parent)
         self.setObjectName("msgChip")
         self.setFixedHeight(MSG_CHIP_HEIGHT)
-        self._id = attachment_id
-        self.setProperty("clickable", attachment_id is not None)
-        if attachment_id is None:
-            self.setToolTip(title)
-        else:
-            self.setCursor(Qt.CursorShape.PointingHandCursor)
-            self.setToolTip(f"{title}\nkliknutím zobrazíš text")
+        
+        self._title = title
+        self._id: int | None = None
+        self.set_id(attachment_id)
 
         row = QHBoxLayout(self)
         row.setContentsMargins(10, 0, 10, 0)
         row.setSpacing(6)
         row.addWidget(ChipName(title))
+        
+        
+    def set_id(self, attachment_id: int | None) -> None:
+        self._id = attachment_id
+        self.setProperty("clickable", attachment_id is not None)
+        if attachment_id is None:
+            self.unsetCursor()
+            self.setToolTip(self._title)
+        else:
+            self.setCursor(Qt.CursorShape.PointingHandCursor)
+            self.setToolTip(f"{self._title}\nkliknutím zobrazíš text")
+        self.style().unpolish(self)
+        self.style().polish(self) 
 
 
     def mouseReleaseEvent(self, event) -> None:
@@ -263,7 +269,6 @@ class _MessageChip(QFrame):
 
 
 def _web_chip() -> QFrame:
-    """„Web“ nad otázkou - pri nej bolo zapnuté hľadanie (13d). Neklikateľný, zdroje sú pod odpoveďou."""
     chip = QFrame()
     chip.setObjectName("msgChip")
     chip.setProperty("web", True)
@@ -277,34 +282,64 @@ def _web_chip() -> QFrame:
     return chip
 
 
-class _UserMessage(QWidget):
-    """Bublina s otázkou a nad ňou čipy príloh (a „Web“). Správa bez textu (iba príloha)
-    bublinu nedostane vôbec - prázdna bublina vyzerá ako chyba."""
+class _ChipFlow(QWidget):
+    """Čipy nad otázkou („Web“ a prílohy) zarovnané vpravo, zalamujú sa do riadkov (A2).
+    Polohy sa počítajú ručne vo fit(): rad v QHBoxLayout má minimálnu šírku = súčet čipov,
+    v úzkom okne pretiekol aj s bublinou a držal široký celý stĺpec správ."""
 
+    def __init__(self, chips: list[QWidget], parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._items = chips
+        for chip in chips:
+            chip.setParent(self)
+        self.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
+        self.setFixedHeight(MSG_CHIP_HEIGHT)
+
+
+    def fit(self, width: int) -> None:
+        if width <= 0:
+            return
+        rows: list[list[tuple[QWidget, int]]] = [[]]
+        used = 0
+        for chip in self._items:
+            chip.ensurePolished()               # písmo zo stylesheetu príde až pri polish (§8.2)
+            w = min(chip.sizeHint().width(), width)
+            if rows[-1] and used + MSG_CHIP_SPACING + w > width:
+                rows.append([])
+                used = 0
+            used += (MSG_CHIP_SPACING if rows[-1] else 0) + w
+            rows[-1].append((chip, w))
+        y = 0
+        for row in rows:
+            x = width - sum(w for _, w in row) - MSG_CHIP_SPACING * (len(row) - 1)
+            for chip, w in row:
+                chip.setGeometry(x, y, w, MSG_CHIP_HEIGHT)
+                x += w + MSG_CHIP_SPACING
+            y += MSG_CHIP_HEIGHT + MSG_CHIP_SPACING
+        self.setFixedHeight(y - MSG_CHIP_SPACING)
+
+
+class _UserMessage(QWidget):
     preview_requested = pyqtSignal(int)
 
 
-    def __init__(self, text: str, attachments: list[dict] | None = None, web: bool = False,
-                 parent: QWidget | None = None) -> None:
+    def __init__(self, text: str, attachments: list[dict] | None = None, web: bool = False, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.text: _TextView | None = None
+        self._chips: list[_MessageChip] = []
+        self._flow: _ChipFlow | None = None
 
         column = QVBoxLayout(self)
         column.setContentsMargins(0, 0, 0, 0)
         column.setSpacing(MSG_CHIP_SPACING)
 
         if attachments or web:
-            chips = QHBoxLayout()
-            chips.setContentsMargins(0, 0, 0, 0)
-            chips.setSpacing(MSG_CHIP_SPACING)
-            chips.addStretch(1)
-            if web:
-                chips.addWidget(_web_chip())
             for item in attachments or ():
                 chip = _MessageChip(item["title"], item.get("id"))
                 chip.clicked.connect(self.preview_requested)
-                chips.addWidget(chip)
-            column.addLayout(chips)
+                self._chips.append(chip)
+            self._flow = _ChipFlow(([_web_chip()] if web else []) + self._chips)
+            column.addWidget(self._flow)
 
         if text:
             self.text = _TextView("bubbleText")
@@ -319,9 +354,16 @@ class _UserMessage(QWidget):
             row.addStretch(1)
             row.addWidget(bubble)
             column.addLayout(row)
+    
+    
+    def set_attachments(self, attachments: list[dict]) -> None:
+        for chip, item in zip(self._chips, attachments):
+            chip.set_id(item["id"])
 
 
     def fit(self, width: int) -> None:
+        if self._flow is not None:
+            self._flow.fit(width)
         if self.text is not None:
             self.text.fit(int(width * BUBBLE_MAX_RATIO) - 32, shrink=True)
 
@@ -336,18 +378,18 @@ class _AnswerMessage(QWidget):
         face.setObjectName("avatar")
         face.setFixedSize(AVATAR_SIZE, AVATAR_SIZE)
         face.setPixmap(avatar.pixmap(QSize(AVATAR_SIZE, AVATAR_SIZE)))
-        self.text: _TextView | None = None          # vzniká až pri streamovaní
+        self.text: _TextView | None = None
         self._meta = QLabel()
         self._meta.setObjectName("answerMeta")
         self._meta.hide()
-        self._status = QLabel()                     # „Hľadám na webe…“ pred prvým tokenom
+        self._status = QLabel()
         self._status.setObjectName("answerStatus")
         self._status.hide()
-        self._sources = QLabel()                    # zdroje z webu pod odpoveďou
+        self._sources = QLabel()
         self._sources.setObjectName("answerSources")
         self._sources.setTextFormat(Qt.TextFormat.RichText)
         self._sources.setWordWrap(True)
-        self._sources.setOpenExternalLinks(True)    # QDesktopServices.openUrl - prehliadač
+        self._sources.setOpenExternalLinks(True)
         self._sources.linkHovered.connect(self._sources.setToolTip)
         self._sources.hide()
         self._source_rows: list[dict] = []
@@ -397,12 +439,11 @@ class _AnswerMessage(QWidget):
 
 
     def set_theme(self, theme: str) -> None:
-        """Kód a tabuľky treba prerenderovať – farby sú zapečené v HTML a vo formáte."""
         self._theme = theme
         for part in self._parts:
             if isinstance(part, (_CodeBlock, _TableBox)):
                 part.set_theme(theme)
-        self._render_sources()                      # farba odkazov je v HTML
+        self._render_sources()
         self.fit(self._width)
 
 
@@ -412,8 +453,6 @@ class _AnswerMessage(QWidget):
 
 
     def _render_sources(self) -> None:
-        """Názvy a adresy sú z cudzích stránok - do HTML idú len escapované a odkazom
-        sa stane iba http(s) adresa."""
         rows = []
         link = THEMES[self._theme]["accent_strong"]
         for source in self._source_rows:
@@ -472,7 +511,7 @@ class _AnswerMessage(QWidget):
             if widget is None:
                 continue
             self._body.removeWidget(widget)
-            widget.hide()                           # bez toho zostane visieť na starom mieste
+            widget.hide()
             widget.deleteLater()
         self._parts.clear()
         self.text = None
@@ -491,6 +530,10 @@ class MessageList(QScrollArea):
         
         self._column = QWidget()
         self._column.setMaximumWidth(COMPOSER_MAX_WIDTH)
+        # Šírku stĺpca určuje okno, nie deti (A2). fit() im dáva pevnú šírku podľa stĺpca, takže
+        # s politikou Preferred by najširšie dieťa bolo minimom stĺpca - pri zúžení okna by sa
+        # stĺpec nezmenšil, nepríde Resize a deti by sa nikdy neprepočítali.
+        self._column.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         self._column.installEventFilter(self)
         self._items = QVBoxLayout(self._column)
         self._items.setContentsMargins(0, 24, 0, 8)
@@ -551,6 +594,7 @@ class MessageList(QScrollArea):
         if self._turn is not None:
             return
         user = _UserMessage(question, attachments, web)
+        user.preview_requested.connect(self.preview_requested)
         answer = _AnswerMessage(self._avatar, self._theme)
         self._add(user)
         self._add(answer)
@@ -569,14 +613,16 @@ class MessageList(QScrollArea):
             self._turn[1].set_status(text)
     
     
-    def finish_turn(self, answer: dict) -> None:
+    def finish_turn(self, answer: dict, attachments: list[dict] | None = None) -> None:
         if self._turn is None:
             return
+        if attachments:
+            self._turn[0].set_attachments(attachments)
         bar = self.verticalScrollBar()
         value = bar.value()
-        self._turn[1].show_answer(answer)       # obsah sa prestaví na časti, výška sa zmení
+        self._turn[1].show_answer(answer)
         self._turn = None
-        if not self._stick:                     # kto čítal vyššie, nemá odskočiť dole
+        if not self._stick:
             QTimer.singleShot(0, lambda: bar.setValue(min(value, bar.maximum())))
     
     

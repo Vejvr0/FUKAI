@@ -2,13 +2,15 @@ from __future__ import annotations
 import os
 import platformdirs
 from pathlib import Path
-from core.constants import APP_NAME, SETTINGS_FILENAME, DB_FILENAME, MODELS_DIRNAME
+from core.constants import APP_NAME, CRASH_LOG_FILENAME, SETTINGS_FILENAME, DB_FILENAME, LOGS_FILENAME, MODELS_DIRNAME
 
 __all__ = [
     "APP_NAME",
     "app_dir",
     "settings_path",
     "db_path",
+    "logs_path",
+    "crash_log_path",
     "default_models_dir",
     "ensure_dir",
 ]
@@ -27,6 +29,14 @@ def settings_path() -> Path:
 
 def db_path() -> Path:
     return app_dir() / DB_FILENAME
+
+
+def logs_path() -> Path:
+    return app_dir() / LOGS_FILENAME
+
+
+def crash_log_path() -> Path:
+    return app_dir() / CRASH_LOG_FILENAME
 
 
 def default_models_dir() -> Path:

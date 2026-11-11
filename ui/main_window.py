@@ -1,17 +1,17 @@
 from __future__ import annotations
+import logging
 from pathlib import Path
 from PyQt6.QtWidgets import (
     QFileDialog, QMessageBox, QMainWindow, QFrame, QHBoxLayout, QVBoxLayout, QStackedWidget, QWidget
 )
 from PyQt6.QtCore import QUrl, pyqtSignal
 from PyQt6.QtGui import QDesktopServices
-from core.constants import APP_NAME, ATTACHMENT_CUT_NOTE, PROMPT_RESERVE
-from core.constants import DOCX_SUFFIX, PDF_SUFFIX, TEXT_SUFFIXES, XLSX_SUFFIX
+from core.constants import APP_NAME, PROMPT_RESERVE, DOCX_SUFFIX, PDF_SUFFIX, TEXT_SUFFIXES, XLSX_SUFFIX
 from core.hardware import HardwareProfile
 from core.gguf import read_meta
 from core.monitor import UsageMonitor
 from core.paths import ensure_dir
-from core.errors import FukaiError, Notice
+from core.errors import FukaiError, Notice, Severity
 from storage.database import Database
 from ui.chat_controller import ChatController
 from ui.chat_view import ChatView
@@ -25,6 +25,9 @@ from ui.attachments import AttachmentService
 from ui.model_library import ModelLibrary
 from ui.settings_store import SettingsStore
 from ui.model_info import ModelInfoDialog
+
+log = logging.getLogger(__name__)
+_LEVELS = {Severity.INFO: logging.INFO, Severity.WARNING: logging.WARNING, Severity.ERROR: logging.ERROR}
 from ui.text_preview import TextPreviewDialog
 from ui.toast import Toast, ToastHost
 
@@ -104,7 +107,7 @@ class MainWindow(QMainWindow):
         controller.model_changed.connect(composer.set_model)
         controller.turn_started.connect(composer.begin_turn)
         controller.turn_started.connect(self._chat.begin_turn)
-        controller.web_progress.connect(self._chat.set_web_status)
+        controller.turn_status.connect(self._chat.set_status)
         self._chat.messages.preview_requested.connect(self._on_history_preview)
         controller.token.connect(self._chat.append_token)
         controller.turn_finished.connect(self._chat.finish_turn)
@@ -164,6 +167,8 @@ class MainWindow(QMainWindow):
     
            
     def show_notice(self, notice: Notice, *, persistent: bool = False, progress: bool = False) -> Toast:
+        # Jediné miesto, kadiaľ idú všetky hlásenia - do logu aj s `detail`, ktorý toast neukazuje.
+        log.log(_LEVELS[notice.severity], "%s | %s", notice.message, notice.detail or "-")
         return self._toast.show_notice(notice, persistent=persistent, progress=progress)
     
     
@@ -453,39 +458,14 @@ class MainWindow(QMainWindow):
 
 
     def _on_attachment_ready(self, job_id: int, item: Attachment) -> None:
-        """Rozpočet sa kontroluje až tu - pred extrakciou sa nedá vedieť, koľko z neho
-        príloha zje. Tokeny sú odhad (`dĺžka / 4`), presne ich spočíta až `build_prompt`."""
-        bar = self._chat.composer.attachments
         budget = self._attachment_budget()
         cost = approx_tokens(item.text)
         if budget is not None and cost > budget:
-            item = self._trim(item, budget)
-            if item is None:
-                bar.remove(job_id)
-                self.show_notice(Notice.warning(
-                    "Na prílohu už v kontexte nezostalo miesto.",
-                    hint="Zväčši kontext vo Vlastnostiach alebo odober inú prílohu."
-                ))
-                return
             self.show_notice(Notice.warning(
-                "Príloha sa do kontextu nezmestila celá, orezal som ju.",
-                hint=f"{item.title}: z ~{int_text(cost)} tokenov zostalo ~{int_text(approx_tokens(item.text))}. "
-                     "Celý text dostaneš, keď zväčšíš kontext vo Vlastnostiach a prílohu pridáš znova."
+                "Príloha sa do kontextu pravdepodobne nezmestí celá.",
+                 hint=f"{item.title}: ~{int_text(cost)} tokenov, voľných ~{int_text(max(0, budget))}. Pri odoslaní sa oreže a model dostane jej začiatok. Celú ju dostane, keď zväčšíš kontext."
             ))
-        bar.set_ready(job_id, item)
-
-
-    @staticmethod
-    def _trim(item: Attachment, budget: int) -> Attachment | None:
-        """Oreže text na rozpočet. Ukladá sa to, čo naozaj pôjde modelu, takže náhľad
-        ukazuje presne to, čo model dostane. Zvyšok sa po zväčšení kontextu nevráti sám -
-        prílohu treba pridať znova."""
-        room = budget * 4 - len(ATTACHMENT_CUT_NOTE)         # odhad tokenu je dĺžka / 4
-        if room <= 0:
-            return None
-        cut = item.text[:room]
-        end = cut.rfind("\n")
-        return Attachment(item.title, (cut[:end] if end > room // 2 else cut) + ATTACHMENT_CUT_NOTE, True)
+        self._chat.composer.attachments.set_ready(job_id, item)
 
 
     def _on_send(self, text: str) -> None:
@@ -502,7 +482,6 @@ class MainWindow(QMainWindow):
 
 
     def _on_history_preview(self, attachment_id: int) -> None:
-        """Text príloh sa pri otvorení chatu nenačítava (12a), dotiahne sa až tu."""
         try:
             row = self._database.get_attachment(attachment_id)
         except FukaiError as exc:
@@ -536,8 +515,6 @@ class MainWindow(QMainWindow):
 
 
     def _sync_web(self) -> None:
-        """Tlačidlo Web ukazuje vlastnosť zobrazeného chatu (sticky, §7.2). Po výmene modelu
-        sa vlastnosti resetujú (§7.1), takže sa vypne aj prepínač."""
         if not self._settings.current.web_search_enabled:
             return
         try:
@@ -556,6 +533,5 @@ class MainWindow(QMainWindow):
             stored = False
         if not stored:
             if on:
-                self.show_notice(Notice.info("Najprv vyber model.",
-                                             hint="Hľadanie na webe je vlastnosť chatu - bez modelu ho nemá kam uložiť."))
+                self.show_notice(Notice.info("Najprv vyber model.", hint="Hľadanie na webe je vlastnosť chatu - bez modelu ho nemá kam uložiť."))
             self._sync_web()

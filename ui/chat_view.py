@@ -153,7 +153,7 @@ class ChatView(QWidget):
         self.messages.begin_turn(question, attachments, web)
 
 
-    def set_web_status(self, text: str) -> None:
+    def set_status(self, text: str) -> None:
         self.messages.set_status(text)
     
     
@@ -161,8 +161,8 @@ class ChatView(QWidget):
         self.messages.append_token(piece)
     
     
-    def finish_turn(self, answer: dict) -> None:
-        self.messages.finish_turn(answer)
+    def finish_turn(self, answer: dict, attachments: list[dict] | None = None) -> None:
+        self.messages.finish_turn(answer, attachments)
     
     
     def roll_back(self) -> None:

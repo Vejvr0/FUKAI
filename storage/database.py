@@ -6,7 +6,7 @@ from contextlib import contextmanager
 from collections.abc import Iterator
 from pathlib import Path
 from core.paths import db_path, ensure_dir
-from core.errors import StorageError
+from core.errors import DatabaseCorruptError, StorageError
 from storage.constants import (
     SCHEMA_VERSION, PRAGMAS, SCHEMA_V1, SCHEMA_V2
 )
@@ -15,6 +15,8 @@ __all__ = [
     "SCHEMA_VERSION",
     "Database"
 ]
+
+_CORRUPT = frozenset({"SQLITE_CORRUPT", "SQLITE_NOTADB"})
 
 
 def _parse_json(row: dict, key: str) -> dict:
@@ -33,16 +35,37 @@ class Database:
     def connect(self) -> None:
         if self._conn is not None:
             return
+        conn = None
         try:
             ensure_dir(self.path.parent)
             conn = sqlite3.connect(self.path, check_same_thread=False)
             conn.row_factory = sqlite3.Row
             for pragma in PRAGMAS:
                 conn.execute(pragma)
+            check = conn.execute("PRAGMA quick_check").fetchone()[0]
         except (OSError, sqlite3.Error) as exc:
-            raise StorageError(f"{type(exc).__name__}: {exc}") from exc
+            if conn is not None:
+                conn.close()
+            raise self._error(exc) from exc
+        if check != "ok":
+            conn.close()
+            raise self._corrupt(f"quick_check: {check}")
         self._conn = conn
         self._migrate()
+    
+    
+    def _error(self, exc: Exception) -> StorageError:
+        detail = f"{type(exc).__name__}: {exc}"
+        if getattr(exc, "sqlite_errorname", None) in _CORRUPT:
+            return self._corrupt(detail)
+        return StorageError(detail)
+    
+    
+    def _corrupt(self, detail: str) -> DatabaseCorruptError:
+        return DatabaseCorruptError(
+            detail,
+            hint=f"Zatvor FUKAI a súbor {self.path} premenuj alebo presuň inam. Pri ďalšom štarte vznikne nová, prázdna databáza."
+        )
 
 
     def close(self) -> None:
@@ -69,7 +92,7 @@ class Database:
                 with conn:
                     yield conn
             except sqlite3.Error as exc:
-                raise StorageError(f"{type(exc).__name__}: {exc}") from exc
+                raise self._error(exc) from exc
 
 
     @property
@@ -103,7 +126,7 @@ class Database:
                     conn.executescript(SCHEMA_V2)
                 conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
         except sqlite3.Error as exc:
-            raise StorageError(f"{type(exc).__name__}: {exc}") from exc
+            raise self._error(exc) from exc
         self.created = version == 0
 
 
@@ -112,7 +135,7 @@ class Database:
         try:
             rows = conn.execute(sql, params).fetchall()
         except sqlite3.Error as exc:
-            raise StorageError(f"{type(exc).__name__}: {exc}") from exc
+            raise self._error(exc) from exc
         return [dict(row) for row in rows]
 
 
@@ -181,7 +204,7 @@ class Database:
         return message_id
     
     
-    def add_turn(self, chat_id: int | None, question: dict, answer: dict, *, answer_tokens: int | None = None, new_chat: tuple[int, str, dict] | None = None, attachments: list[dict] | None = None) -> int:
+    def add_turn(self, chat_id: int | None, question: dict, answer: dict, *, answer_tokens: int | None = None, new_chat: tuple[int, str, dict] | None = None, attachments: list[dict] | None = None) -> tuple[int, list[int]]:
         if chat_id is None and new_chat is None:
             raise ValueError("add_turn bez chat_id potrebuje new_chat")
         with self.transaction() as conn:
@@ -190,11 +213,10 @@ class Database:
                 chat_id = conn.execute("INSERT INTO chats (title, model_id) VALUES (?, ?)", (title, model_id)).lastrowid
                 conn.execute("INSERT INTO properties (chat_id, data) VALUES (?, ?)", (chat_id, json.dumps(properties)))
             question_id = conn.execute("INSERT INTO content (data, tokens, role, chat_id) VALUES (?, NULL, 'user', ?)", (json.dumps(question), chat_id)).lastrowid
-            for item in attachments or ():
-                conn.execute("INSERT INTO attachments (title, content, message_id) VALUES (?, ?, ?)", (item["title"], item["content"], question_id))
+            attachment_ids = [conn.execute("INSERT INTO attachments (title, content, message_id) VALUES (?, ?, ?)", (item["title"], item["content"], question_id)).lastrowid for item in attachments or ()]
             conn.execute("INSERT INTO content (data, tokens, role, chat_id) VALUES (?, ?, 'assistant', ?)", (json.dumps(answer), answer_tokens, chat_id))
             conn.execute("UPDATE chats SET updated_at = (datetime('now')) WHERE id = ?", (chat_id,))
-        return chat_id
+            return chat_id, attachment_ids
     
     
     def get_chat(self, chat_id: int) -> dict | None:

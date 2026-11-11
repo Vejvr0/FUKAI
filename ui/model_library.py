@@ -1,5 +1,5 @@
 from __future__ import annotations
-import sys
+import logging
 import shutil
 import threading
 from dataclasses import fields
@@ -13,6 +13,8 @@ from storage.database import Database
 from ui.formatting import size_text
 from ui.settings_store import SettingsStore
 from ui.workers import ImportRequest, ImportWorker
+
+log = logging.getLogger(__name__)
 
 __all__ = ["ModelLibrary"]
 
@@ -88,7 +90,7 @@ class ModelLibrary(QObject):
                 meta = read_meta(path)
                 check_usable(meta)
             except ModelError as exc:
-                print(f"[SKEN] preskočený {path.name}: {exc.message} | {exc}", file=sys.stderr)
+                log.info("Sken: preskočený %s: %s | %s", path.name, exc.message, exc)
                 continue
             try:
                 self._database.add_model(path.stem, path.name, meta.to_dict())
