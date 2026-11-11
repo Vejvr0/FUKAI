@@ -41,7 +41,7 @@ Plné znenie do 2026-11-11 – podrobnosti každého kúsku, merania, zahodené 
 | Stroj | CPU | GPU / VRAM | RAM | Stav |
 |---|---|---|---|---|
 | MacBook | Apple M2 (4P + 4E) | integrovaná, zdieľaná | **8 GB** | Metal; veľký test 2026-11-09 (`APPTEST.md`) |
-| PC 1 | Core Ultra 7 265K (8P + 12E) | RTX 5060 Ti 16 GB (sm_120) | 32 GB | CUDA Toolkit 13.0, driver 621.14; celá appka overená 2026-11-06 |
+| PC 1 | Core Ultra 7 265K (8P + 12E) | RTX 5060 Ti 16 GB (sm_120) | 32 GB | CUDA Toolkit 13.0, driver 621.14; celá appka overená 2026-11-06, veľký test 2026-11-11 (`APPTEST.md` → WINDOWS) |
 | PC 2 | – | RTX 4080 16 GB (sm_89) | – | neoverený |
 | Notebook | i7-11850H (8C/16T) | T1200 4 GB (sm_75), Optimus | 64 GB | CPU wheel, Gemma 3 4B 13–14 tok/s; CUDA wheel neskúšaný |
 
@@ -52,7 +52,7 @@ Plné znenie do 2026-11-11 – podrobnosti každého kúsku, merania, zahodené 
 
 ### 4.1 Testovacie modely
 
-Mimo repa, nekopírovať do projektu. PC 1: `../llama-chatbot/models/` (Gemma 3 4B it Q4_K_M, Mistral 7B Instruct v0.2 Q4_K_M). Mac: `devdata/models/` (Gemma 3 4B, Qwen 2.5 1.5B Instruct Q4_0). `mmproj-google_gemma-3-4b-it-f16.gguf` na test odmietnutia.
+Mimo repa, nekopírovať do projektu. PC 1: `../llama-chatbot/models/` (Gemma 3 4B it Q4_K_M, Mistral 7B Instruct v0.2 Q4_K_M, Qwen 2.5 1.5B Instruct Q4_0 – doplnený 2026-11-11 z `Qwen/Qwen2.5-1.5B-Instruct-GGUF`). Mac: `devdata/models/` (Gemma 3 4B, Qwen 2.5 1.5B Instruct Q4_0). `mmproj-google_gemma-3-4b-it-f16.gguf` na test odmietnutia; **na PC 1 ho netreba sťahovať** – rovnakú cestu `check_usable` overí syntetická hlavička s `general.architecture = clip` (generátor v scratchpade testu, §8.3).
 
 ## 5. Prototyp `llama-chatbot` – čomu sa vyhnúť
 
@@ -155,7 +155,7 @@ FUKAI/
 | 11 | vlastnosti chatu, výber a import modelu (= kúsky 5a–5c, 9) | ✅ |
 | 12 | prílohy | ✅ |
 | 13 | web rozšírenie | ✅ |
-| 14 | opravy pred v1 ✅ → commit → **test na PC 1 (§8.3)** → balenie | 🔄 |
+| 14 | opravy pred v1 ✅ → commit ✅ → test na PC 1 ✅ (2026-11-11, 445/445) → **balenie** | 🔄 |
 
 **Prečo jadro pred UI:** tvar UI určuje worker + signály; načítanie CUDA/Metal bolo jediné skutočné riziko; nastavenia sa nedajú navrhnúť bez bežiaceho enginu.
 
@@ -205,7 +205,7 @@ FUKAI/
 
 **13. Web** – `extensions/web_search.py` (len `WebSearchError`, aj „žiadny výsledok“): `ddgs` 5 výsledkov, región `sk-sk`, všetky stránky naraz s termínom 4 s, vyberú sa 3 (s textom v poradí vyhľadávača, inak úryvok), text pod 300 znakov nie je obsah, zdroj najviac 6000 znakov, User-Agent `FUKAI/<verzia>` **s adresou repa** (inak Wikipédia 403). `WebService` vo vlastnom vlákne, zrušenie `threading.Event`, zrušená úloha nevyšle nič. Hľadanie beží **súbežne s načítaním modelu**, generuje sa po oboch. **Dopyt = otázka tak, ako je.** Zlyhanie → toast a odpoveď bez webu. Text stránok žije len v ťahu; uloží sa dopyt a použité zdroje `{n, title, url}`. Zdroje pod odpoveďou ako odkazy (len `http(s)`, escapované – sú z cudzej stránky), „· N zdroje“ v meta riadku. Prepínač Web zapisuje hneď (sticky, v novom chate do draftu), počas ťahu je vypnutý, výmena modelu ho vypne (reset vlastností).
 
-**14. Do prvej verzie** (rozhodnutie autora 2026-11-10): opravy z veľkého testu → commit → test na PC 1 podľa §8.3 (výsledky do `APPTEST.md` → WINDOWS) → balenie (PyInstaller, C# inštalačka, CUDA bez Toolkitu, §10). Opravy A1–A4 a B1–B4 sú hotové 2026-11-11 (`APPTEST.md` → „Opravy po teste“). Na balenie: assety sa hľadajú cez `Path(__file__).parent.parent` (`ui/constants.py`, `core/constants.py`) – v `--onedir` pribaliť `assets/` a `vars/` do `_internal/` s rovnakou štruktúrou; na macOS vypnúť obnovu okien po páde (dialóg „obnoviť okná?“ pred splashom) a nastaviť názov appky (v menu je „Python“).
+**14. Do prvej verzie** (rozhodnutie autora 2026-11-10): opravy z veľkého testu → commit → test na PC 1 podľa §8.3 (hotový 2026-11-11, výsledky v `APPTEST.md` → WINDOWS: 445 kontrol, žiadna chyba appky, nálezy W1–W4 sú prostredie a knižnica) → balenie (PyInstaller, C# inštalačka, CUDA bez Toolkitu, §10). Opravy A1–A4 a B1–B4 sú hotové 2026-11-11 (`APPTEST.md` → „Opravy po teste“). Na balenie: assety sa hľadajú cez `Path(__file__).parent.parent` (`ui/constants.py`, `core/constants.py`) – v `--onedir` pribaliť `assets/` a `vars/` do `_internal/` s rovnakou štruktúrou; na macOS vypnúť obnovu okien po páde (dialóg „obnoviť okná?“ pred splashom) a nastaviť názov appky (v menu je „Python“).
 
 ### 8.1 Ako sa na projekte pracuje
 
@@ -243,6 +243,12 @@ FUKAI/
 | **Predvolený argument sa viaže pri definícii** | podstrčiť funkciu v teste cez `__defaults__`, nie prepísaním atribútu modulu |
 | **Offscreen má iné písmo aj štýl** | rozmery a kurzor overovať na `cocoa` / `windows`, offscreen len logiku |
 | **Umelé udalosti v testoch** | `sendEvent` sa nepropaguje rodičom, `widget.event()` obchádza event filtre, `singleShot` na ne-`QObject` drží slabú referenciu, drop bez `DragEnter` sa zahodí |
+| **`QTest.keyClicks` zvládne len ASCII** | na diakritike Qt spadne assertom (`qasciikey.cpp:192`) a **zhodí proces**; diakritiku vkladať cez `setPlainText` |
+| **`int(QtEnum)` v PyQt6** (`QMessageBox.icon()`, `QCursor.shape()`) | `TypeError`; treba `.value` alebo `.name` |
+| **`QMenu.exec()` vráti akciu len pri klávesovej voľbe** | `action.trigger()` ju nevráti, takže kód rozhodujúci podľa návratovej hodnoty (menu ⋯) nič neurobí; v teste `Key_Down` + `Key_Return` |
+| **`QDesktopServices.setUrlHandler` s lambdou** | prijímateľ sa zahodí a adresa sa naozaj otvorí v prehliadači; musí to byť živý `QObject` so slotom |
+| **`QDropEvent` chce `QPointF`** | `QDragEnterEvent` prijme aj `QPoint`, `QDropEvent` nie |
+| **`offscreen` pokazí PDF z `QPdfWriter`** | bez natívneho font enginu sa text vysádza ako krivky, PDF nemá fonty a `pypdf` z neho nevytiahne nič |
 
 ### 8.3 Test aplikácie pred vydaním – postup pre oba OS
 
@@ -289,9 +295,10 @@ Prvý beh na Macu 2026-11-09, výsledky v **`APPTEST.md`** (sekcia MAC), opravy 
 
 ### 8.4 Otvorené body
 
-- **Na PC 1 neoverené:** oprava pádu pri mazaní chatu počas odpovede (menu ⋯), opravy A1–A4 a B1–B4, kúsky 7–13 na Windows (web, prílohy, log), plná VRAM. Pokrýva test §8.3.
+- **Windows je overený** (test 2026-11-11, `APPTEST.md` → WINDOWS, 445 kontrol bez chyby appky): mazanie chatu počas odpovede, opravy A1–A4 a B1–B4, kúsky 7–13, plná VRAM, mmap, natívne dialógy, NVML. Neoverené zostáva len to, čo automat nevie (výber súboru v natívnom dialógu, uspanie počas generovania, odpojenie siete, vizuál tmavej témy).
 - **Krok 14:** PyInstaller, C# inštalačka, **CUDA bez samostatného Toolkitu** (požiadavka autora), CUDA wheel na T1200 (sm_75), macOS obnova okien po páde a názov v menu.
 - **Neskôr (C1–C6 v `APPTEST.md`):** jedna inštancia appky, prázdny `.txt`, zápis opraveného `models_dir`, tabulátory z `pypdf`, nápoveda composera v úzkom okne, odporúčanie modelov.
+- **Neskôr (W2–W5 z windowsového testu):** seed je reprodukovateľný až od druhej rovnakej požiadavky (vlastnosť llama-cpp-python, nie chyba); `kv_cache_mb()` nepočíta so sliding-window attention a pri Gemme 3 nadsadí odhad (17 GB proti ~1 GB skutočne); `fukai-crash.log` sa len dopĺňa a appka ho drží otvorený; self-test `core.gguf` na Windows padá na kontrole adresára (`PermissionError` namiesto `IsADirectoryError`) – v appke je tá cesta zavretá cez `is_file()`.
 - **Drobnosti:** počet tokenov systémového promptu je odhad `dĺžka / 4`; kontextové menu textu je po anglicky; výber textu myšou cez viac častí odpovede nejde; tabuľka vnorená v odrážke nedostane rám; citácie `[n]` nie sú klikateľné; zoznam chatov bez klávesovej navigácie a neroluje sa na aktívny chat; monitor sa nepamätá; generátor ikon nie je v repe; Qwen 3 `<think>` a Llama 3 `strftime_now` neoverené.
 
 ## 9. Poznámky k prostrediu
@@ -302,6 +309,8 @@ PC 1: shell **PowerShell 5.1**, Claude Code má aj Git Bash.
 - **`set X=y` je syntax cmd.exe, v PowerShelli ticho nič nespraví** (vyrobí premennú s menom `X=y`) → `$env:X = "y"`. Takto vznikol CPU-only build llama-cpp-python bez chyby – po builde zo zdrojákov vždy skontrolovať `llama_cpp/lib/`.
 - Git Bash prerába argumenty začínajúce `/` na cesty → commit správy nezačínať `/`. Viacriadkové heredoc v Git Bash sa lámu na slovenských znakoch → súbory zapisovať nástrojom, nie `cat <<EOF`.
 - **`py` je launcher, nie `.venv`** – globálny Python 3.14.2. Isté je `.venv\Scripts\python.exe -m pip …`.
+- **Po `git pull`, ktorý mení requirements, spustiť `pip install -r requirements.txt`.** Venv na PC 1 zostal na `ddgs` 9.7.1 z času pred krokom 13 a web padal na `Invalid impersonate` (W1 v `APPTEST.md`) – prostredie, nie appka.
+- **Na Windows ovládač (WDDM) preteká VRAM do RAM.** Priveľký model alebo kontext sa načíta a odpovie (len pomalšie), `InsufficientMemoryError` z VRAM teda na Windows nečakať; varovanie pred načítaním je jediná obrana. Na Metale to padá.
 - Git identita je nastavená len lokálne v repe; na novom stroji nastaviť, inak commit zlyhá a „Everything up-to-date“ pri pushi klame. `.gitattributes` `* text=auto eol=lf`. `.DS_Store` je v `.gitignore`. ALMANAC commitovať priebežne.
 - Skripty v scratchpade nepomenúvať podľa modulov stdlib (`inspect.py`) a nespúšťať z adresára s kópiou `ui/` (Python importuje najprv odtiaľ).
 

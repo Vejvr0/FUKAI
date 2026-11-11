@@ -46,4 +46,13 @@ Chronologický záznam práce, skrátený 2026-11-11. **Rozhodnutia a stav proje
 - **A2** stĺpec správ `Ignored` + zalamovanie čipov v histórii.
 - Regresia celého dňa nad repom prechádza. ALMANAC a SESSIONS skrátené, plné znenie v `archiv/`. WINDOWS sekcia `APPTEST.md` a §8.3 doplnené o overenie opráv.
 
-**Ďalej:** commit (autor) → test na PC 1 podľa ALMANAC §8.3 → krok 14 (balenie).
+**2026-11-11 – PC 1: veľký test Windows verzie.** Kód bez zmeny (commit `46963e7`), testovalo sa, nie prepisovalo. Najprv prostredie: self-testy jadra prechádzajú, `probe_engine` 0.3.36 s CUDA, detekcia `backend=cuda` a 8 P-jadier – ale **venv zostal na `ddgs` 9.7.1** a web padal na `Invalid impersonate` (W1, opravené `pip install -r requirements.txt`). Doplnené chýbajúce testovacie dáta: stiahnutý Qwen 2.5 1.5B Q4_0, syntetické neplatné modely (`clip`, textový `.gguf`, bez chat template) a 14 príloh vrátane `zmluva.pdf` (2 strany, 5 571 znakov) a `velky.pdf` (300 strán, 773 784 znakov).
+- **17 fáz, 445 kontrol, všetky OK, žiadna chyba appky** (`APPTEST.md` → WINDOWS). Testy spúšťajú skutočné `Application.run()` a kroky vkladajú do jeho smyčky, telo `run()` sa nekopíruje.
+- Overené opravy A1–A4 a B1–B4; na PC prvýkrát aj mazanie chatu počas odpovede, plná VRAM, mazanie načítaného modelu pod `mmap`, natívne dialógy `#32770`, kurzor v menu, NVML, ikona na paneli úloh, priebeh importu nad 2 GiB.
+- Nálezy mimo appky: **W2** seed je reprodukovateľný až od druhej rovnakej požiadavky (overené izolovane proti llama-cpp-python), **W3** `kv_cache_mb()` nepočíta so sliding-window attention (Gemma 3: odhad 17 GB proti ~1 GB skutočne) a na Windows ovládač preteká VRAM do RAM, takže `InsufficientMemoryError` z VRAM nenastane, **W4** `fukai-crash.log` sa drží otvorený a len dopĺňa.
+- Pasce testov na Windows do §8.2: `QTest.keyClicks` zvládne len ASCII (na diakritike Qt assert zhodí proces), `int(QtEnum)` padá, `QMenu.exec()` vráti akciu len pri klávesovej voľbe, `setUrlHandler` s lambdou nefunguje, `offscreen` pokazí PDF z `QPdfWriter`.
+- Výkon proti Macu: Qwen 222 tok/s (Mac 74), Gemma 96 (24), Mistral 75,6 (nezmestí sa), Gemma s webom prvý token 3,1 s (11,5 s), 12 ťahov RSS +31 MB.
+- Testovacie skripty (kostra `harness.py` + 17 fáz + generátor dát) zostali v scratchpade session, ako na Macu – v repe nie sú. Pri ďalšom teste sa píšu znova podľa §8.3; pasce, ktoré to stálo, sú už v §8.2.
+- Nezmeraný zostal čistý RAM profil: cudzí proces `javaw` držal 13,5 GB a systém bol na 94,5 %.
+
+**Ďalej:** krok 14 – balenie (PyInstaller `--onedir`, C# inštalačka, CUDA bez Toolkitu).
