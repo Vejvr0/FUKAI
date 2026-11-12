@@ -5,3 +5,6 @@ __pycache__/
 /models/
 /devdata/
 *.gguf
+/dist/backend_whls/**/*.whl
+/dist/backend_whls/*.log
+/dist/tools/

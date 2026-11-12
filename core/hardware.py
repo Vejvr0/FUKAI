@@ -222,24 +222,6 @@ def detect_gpu() -> GpuInfo | None:
     return _probe_nvidia() or _probe_metal()
 
 
-def required_wheel(profil: HardwareProfile) -> str | None:
-    if profil.gpu is None or profil.gpu.backend != "cuda":
-        return None
-    return gpu_arch(profil.gpu.compute)[1]
-
-
-def gpu_arch(compute: str | None) -> tuple[str | None, str | None]:
-    if compute is None:
-        return None, None
-    try:
-        write = get_allowed_hw()["cuda_arch"].get(compute)
-    except (ConfigError, KeyError, json.JSONDecodeError):
-        return None, None
-    if not isinstance(write, dict):
-        return None, None
-    return write.get("name"), write.get("wheel")
-
-
 def detect(*, gpu_offload: bool = True) -> HardwareProfile:
     ram = psutil.virtual_memory()
     release, os_version = _os_version()
@@ -268,7 +250,7 @@ def get_allowed_hw():
         "platforms": data['minimum_os'],
         "cores": data['minimum_cores'],
         "ram_mb": data['minimum_ram_gb'] * 1024,
-        "cuda_arch": data['cuda_arch'],
+        "cuda_compute": data['minimum_cuda_compute']
     }
 
 
@@ -338,32 +320,43 @@ def check_ram(profil: HardwareProfile) -> Notice | None:
     return None
 
 
+def _version(text: str) -> tuple[int, ...]:
+    return tuple(int(part) for part in text.split("."))
+
+
+def _cuda_too_old(gpu: GpuInfo) -> str | None:
+    if gpu.backend != "cuda" or not gpu.compute:
+        return None
+    try:
+        minimum = get_allowed_hw()["cuda_compute"]
+        return minimum if _version(gpu.compute) < _version(minimum) else None
+    except (ConfigError, KeyError, ValueError, json.JSONDecodeError):
+        return None
+
+
 def check_gpu(profil: HardwareProfile) -> Notice | None:
-    if profil.gpu is None:
+    gpu = profil.gpu
+    if gpu is None:
         return Notice.warning(
             "Nenašla sa podporovaná GPU, model pobeží na CPU.",
             hint="Odpovede budú výrazne pomalšie. FUKAI akceleruje na NVIDIA (CUDA) a Apple Silicon (Metal).",
         )
     
+    minimum = _cuda_too_old(gpu)
+    if minimum is not None:
+        return Notice.warning(
+            f"Grafická karta {gpu.name} je staršia, než FUKAI podporuje, model pobeží na CPU.",
+            hint=f"Potrebná je karta NVIDIA s compute capability aspoň {minimum} (GTX 16xx, RTX 20xx a novšie).",
+            detail=f"compute capability {gpu.compute}, gpu_offload={profil.gpu_offload}",
+        )
+
     if not profil.gpu_offload:
         hint = (
-            "Nainštalovaný engine (llama-cpp-python) je len pre CPU. Na zrýchlenie nainštaluj CUDA verziu podľa requirements-llama-win-cuda.txt (potrebuje CUDA Toolkit 13)."
-            if profil.gpu.backend == "cuda" else
-            "Nainštalovaný engine (llama-cpp-python) je zostavený bez podpory Metal - pozri requirements-llama-mac.txt."
+            "Aktualizuj ovládač grafickej karty NVIDIA a preinštaluj FUKAI – inštalačka potom zvolí verziu pre grafickú kartu."
+            if gpu.backend == "cuda" else
+            "Preinštaluj FUKAI."
         )
-        return Notice.warning(
-            f"Grafická karta {profil.gpu.name} sa nepoužije, model pobeží na CPU.",
-            hint=hint
-        )
-
-    if profil.gpu.backend != "cuda":
-        return None
-
-    if gpu_arch(profil.gpu.compute)[1] is None:
-        return Notice.warning(
-            f"Pre tvoju grafickú kartu nie je známy predkompilovaný wheel (compute capability {profil.gpu.compute}).",
-            hint="Pozri requirements-llama-win-cuda.txt.",
-        )
+        return Notice.warning(f"Grafická karta {gpu.name} sa nepoužije, model pobeží na CPU.", hint=hint)
 
     return None
 
@@ -380,12 +373,11 @@ if __name__ == "__main__":
     print(f"RAM voľná:  {profil.ram_available_mb / 1024:.1f} GB")
 
     if profil.gpu:
-        arch, wheel = gpu_arch(profil.gpu.compute)
         print(f"Grafika:    {profil.gpu.name}")
         if profil.gpu.vram_total_mb:
             print(f"VRAM:       {profil.gpu.vram_total_mb / 1024:.1f} GB celkom, "
                   f"{profil.gpu.vram_free_mb / 1024:.1f} GB voľnej")
-        print(f"Architekt.: {arch or 'neznáma'}  (compute {profil.gpu.compute}, wheel {wheel or '?'})")
+        print(f"Compute:    {profil.gpu.compute or '-'}")
     else:
         print("Grafika:    nenašla sa")
 

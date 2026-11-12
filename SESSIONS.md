@@ -67,4 +67,10 @@ Rozhodnutie autora: VC++ runtime pribalí Windows inštalačka (app-local).
 
 Rady pri chybe enginu prepísal autor pre používateľa (preinštalovať FUKAI, nie Toolkit / requirements). Každý fatálny dialóg pri štarte má za radou cestu k logu (overené naživo: poškodená databáza, neočakávaná chyba, chyba DLL enginu, bez logu).
 
-**Ďalej:** vlastný Metal wheel na M2, manifest verzií, potom C# inštalačka a `.pkg`.
+**2026-11-12 – Mac: príprava balíkov pre inštalačky** (autor po krokoch s návodom, Claude skúšal najprv v scratchpade a kontroloval).
+- Rozhodnutia autora: všetky tri wheely llama-cpp-python vo vlastnom verejnom repe na vydania (CPU a CUDA oficiálne bez zmeny, Metal vlastný), inštalačky ich sťahujú; minimum macOS 14; všetko na balenie v `dist/`.
+- **Metal wheel** postavený s `MACOSX_DEPLOYMENT_TARGET=14.0` a `GGML_NATIVE=OFF` (build v `.venv` mal `minos 26.0` a inštrukcie M2 – na M1 by spadol). Rozdiel proti natívnemu buildu do 5 %. Prostredie cez `uv` 0.13.7 z wheelu bez kompilácie, appka z neho beží na Metale aj po zmazaní cache.
+- **`dist/manifest.json`, `dist/make_locks.py`, zámky pre tri backendy** (verzie a hashe všetkých balíkov z PyPI), `requirements-llama-*.txt` zrušené. Inštalácia zo zámku s `--require-hashes` overená, aj odmietnutie pokazeného hashu.
+- **`hw.json` a `check_gpu`:** minimum macOS 14, compute capability 7.5 namiesto mapy architektúr, rady pre používateľa. V prepise dve chyby, ktoré by sa na Macu neukázali (`TypeError` pri každej NVIDIA karte, preklep kľúča vypínajúci všetky kontroly) – opravené.
+
+**Ďalej:** commit prípravy balíkov → repo na vydania (autor) → `provision.sh` a `.pkg` (Mac), C# inštalačka (Windows). Otvorené: kam inštalovať na Macu (A `/Applications` s heslom / B len pre používateľa).

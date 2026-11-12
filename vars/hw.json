@@ -6,20 +6,13 @@
             "label": "Windows 10 verzia 2004"
         },
         "Darwin": {
-            "minimum": 12,
+            "minimum": 14,
             "compare": "major",
-            "label": "macOS 12 Monterey"
+            "label": "macOS 14 Sonoma"
         }
     },
     "minimum_cores": 8,
     "minimum_ram_gb": 4,
-    "cuda_arch": {
-        "12.0": {"name": "Blackwell",     "wheel": "sm120"},
-        "10.0": {"name": "Blackwell",     "wheel": "sm100"},
-        "9.0":  {"name": "Hopper",        "wheel": "sm90"},
-        "8.9":  {"name": "Ada Lovelace",  "wheel": "sm89"},
-        "8.6":  {"name": "Ampere",        "wheel": "sm86"},
-        "8.0":  {"name": "Ampere",        "wheel": "sm80"},
-        "7.5":  {"name": "Turing",        "wheel": "sm75"}
-    }
+    "minimum_cuda_compute": "7.5",
+    "note_allowed_archs": ["Blackwell", "Ada Lovelace", "Ampere", "Turing", "Hopper"]
 }

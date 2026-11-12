@@ -1,0 +1,57 @@
+{
+    "schema": 1,
+    "app_version": "1.0",
+    "python": "3.12.10",
+    "releases": "https://github.com/Vejvr0/<RELEASE_REPO>/releases/download",
+
+    "uv": {
+        "version": "0.13.7",
+        "windows": {
+            "url": "https://github.com/astral-sh/uv/releases/download/0.13.7/uv-x86_64-pc-windows-msvc.zip",
+            "sha256": "0cdc5b38fe5a8168ed6a25814f5ba43c21d313dd3187314fccb37b7cec46e021" 
+        },
+        "macos": {
+            "url": "https://github.com/astral-sh/uv/releases/download/0.13.7/uv-aarch64-apple-darwin.tar.gz",
+            "sha256": "81b811b57e4624df7ed3aac148e0359100d9962f3d9dce00aec533dc2e086731"
+        }
+    },
+
+    "minimum": {
+        "macos_version": "14.0",
+        "macos_arch": "arm64",
+        "windows_cpu": ["AVX2", "FMA", "F16C"],
+        "cuda_compute_capability": "7.5",
+        "cuda_driver": "580.00"
+    },
+
+    "backends": {
+        "metal": {
+            "os": "macos",
+            "lock": "locks/mac-metal.txt",
+            "wheel": {
+                "release": "llama-0.3.36-metal",
+                "file": "llama_cpp_python-0.3.36-py3-none-macosx_14_0_arm64.whl",
+                "sha256": "9b80c0976fe3b54db3619c37bd6094dd3129a470100db97cfa182d193fc56509"
+            }
+        },
+        "cuda": {
+            "os": "windows",
+            "lock": "locks/win-cuda.txt",
+            "fallback": "cpu",
+            "wheel": {
+                "release": "llama-0.3.36-cu130",
+                "file": "llama_cpp_python-0.3.36-py3-none-win_amd64.whl",
+                "sha256": "2db1d93d452244cbb400d32c64c2467f2f2d373f8014a60b778b5b67973ed9db"
+            }
+        },
+        "cpu": {
+            "os": "windows",
+            "lock": "locks/win-cpu.txt",
+            "wheel": {
+                "release": "llama-0.3.36-cpu",
+                "file": "llama_cpp_python-0.3.36-py3-none-win_amd64.whl",
+                "sha256": "ae5e88a2cf464e5a2dde7c8898c2d5c71cc24d03cac6396bf7509456bde0b9fb"
+            }
+        }
+    }
+}
