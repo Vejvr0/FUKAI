@@ -43,9 +43,7 @@ _QT_LEVELS = {
 
 
 def _qt_message(kind: QtMsgType, context, message: str) -> None:
-    """Hlásenia Qt (napr. „QThread: Destroyed while thread is still running“) do fukai.log."""
     category = context.category or "qt"
-    # qt.qpa.* sú hlásenia platformy - na macOS „propagateSizeHints“ pri každom okne, aliasy písiem.
     if category.startswith("qt.qpa.") and kind in (QtMsgType.QtDebugMsg, QtMsgType.QtInfoMsg, QtMsgType.QtWarningMsg):
         return
     logging.getLogger("ui.qt").log(_QT_LEVELS.get(kind, logging.WARNING), "%s: %s", category, message)
@@ -62,24 +60,20 @@ def _set_windows_app_id() -> None:
 
 
 class Application(QApplication):
-    _uncaught = pyqtSignal(str)         # neodchytená výnimka → toast v hlavnom vlákne (A3)
+    _uncaught = pyqtSignal(str)
 
 
     def __init__(self, argv: list[str]) -> None:
         _set_windows_app_id()
         super().__init__(argv)
-        # Log ako prvý - aby v ňom bol aj štart. Vlastný súbor, nie stderr: ten počas
-        # načítania modelu llama-cpp-python umlčí (§8 krok 9, test na PC 1).
         self.log_path = setup_logging()
         enable_crash_log()
         qInstallMessageHandler(_qt_message)
         self._error_toast = None
-        # Vždy cez frontu: výnimka mohla vzniknúť vo workeri, toast sa smie ukázať len v hlavnom vlákne.
         self._uncaught.connect(self._show_uncaught, Qt.ConnectionType.QueuedConnection)
         sys.excepthook = self._on_uncaught
         threading.excepthook = lambda args: self._on_uncaught(args.exc_type, args.exc_value, args.exc_traceback)
-        log.info("FUKAI %s · %s · Python %s · Qt %s · PyQt %s · dáta %s", APP_VERSION, platform.platform(),
-                 platform.python_version(), QT_VERSION_STR, PYQT_VERSION_STR, app_dir())
+        log.info("FUKAI %s · %s · Python %s · Qt %s · PyQt %s · dáta %s", APP_VERSION, platform.platform(), platform.python_version(), QT_VERSION_STR, PYQT_VERSION_STR, app_dir())
         self.setStyle("Fusion")
         self.setApplicationName(APP_NAME)
         self.setApplicationVersion(APP_VERSION)
@@ -115,10 +109,9 @@ class Application(QApplication):
             self.shutdown()
             return 1
         except Exception:
-            # Bez okna sa pokračovať nedá - toast nemá kam ísť, preto fatálny dialóg ako vyššie.
             log.critical("Neočakávaná chyba pri štarte", exc_info=True)
             splash.close()
-            self._show_fatal(FukaiError(hint=self._with_log(UNCAUGHT_START_HINT)))
+            self._show_fatal(FukaiError(hint=UNCAUGHT_START_HINT))
             self.shutdown()
             return 1
         
@@ -210,12 +203,14 @@ class Application(QApplication):
     
     def _report_notices(self) -> None:
         for notice in self.notices:
-            self.window.show_notice(notice)         # zapíše ho do logu
+            self.window.show_notice(notice)
     
     
     def _show_fatal(self, exc: FukaiError) -> None:
         log.error("%s | %s", exc.message, exc.detail or "-")
-        self._message_box(QMessageBox.Icon.Critical, exc.as_notice()).exec()
+        notice = exc.as_notice()
+        notice = Notice(notice.severity, notice.message, self._with_log(notice.hint or ""), notice.detail)
+        self._message_box(QMessageBox.Icon.Critical, notice).exec()
     
     
     @staticmethod
@@ -227,9 +222,6 @@ class Application(QApplication):
 
     
     def _on_uncaught(self, exc_type, exc, tb) -> None:
-        """A3 - výnimka, ktorú nič neošetrilo: zo slotu, z vlákna aj z hlavného programu.
-        S vlastným excepthookom ju PyQt nezmení na abort (kód 134) a appka beží ďalej
-        (rozhodnutie autora). Traceback ide do logu, používateľ dostane chybový toast."""
         if issubclass(exc_type, KeyboardInterrupt):
             sys.__excepthook__(exc_type, exc, tb)
             return
@@ -239,9 +231,9 @@ class Application(QApplication):
 
     def _show_uncaught(self, detail: str) -> None:
         if self.window is None or not self.window.isVisible():
-            return          # pri štarte ju rieši run() fatálnym dialógom, pri ukončení už niet kde
+            return
         if self._error_toast is not None:
-            return          # záplava (chyba v časovači): kým je hlásenie otvorené, ďalšie len do logu
+            return
         notice = Notice(Severity.ERROR, UNCAUGHT_MESSAGE, self._with_log(UNCAUGHT_HINT), detail)
         self._error_toast = self.window.show_notice(notice)
         self._error_toast.closed.connect(self._on_error_toast_closed)
@@ -252,8 +244,10 @@ class Application(QApplication):
 
 
     def _with_log(self, hint: str) -> str:
-        """Rada + cesta k logu, keď log existuje (setup_logging mohol zlyhať)."""
-        return f"{hint} {LOG_HINT.format(path=self.log_path)}" if self.log_path else hint
+        if not self.log_path:
+            return hint
+        where = LOG_HINT.format(path=self.log_path)
+        return f"{hint} {where}" if hint else where
 
 
     def shutdown(self) -> None:

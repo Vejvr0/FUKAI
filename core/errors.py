@@ -132,7 +132,7 @@ class ModelImportError(ModelError):
 
 class BackendUnavailableError(ModelError):
     default_message = "Engine pre spúšťanie modelov nie je dostupný."
-    default_hint = "Nainštaluj llama-cpp-python podľa requirements-llama-*.txt."
+    default_hint = "Inštalácia FUKAI je neúplná. Spusti inštaláciu FUKAI znova."
 
 
 class ModelLoadError(ModelError):

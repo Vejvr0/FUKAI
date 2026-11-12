@@ -17,6 +17,7 @@ THEMES = ("light", "dark")
 ATTACHMENTS_ENABLED_DEFAULT = True
 WEB_SEARCH_ENABLED_DEFAULT = False
 HW_CONF = Path(__file__).resolve().parent.parent / "vars" / "hw.json"
+NVIDIA_DLL_SUBDIR = ("nvidia", "cu13", "bin", "x86_64")
 RELATION_PROCESSOR_CORE = 0
 ERROR_INSUFFICIENT_BUFFER = 122
 TOKENS_PER_MESSAGE = 8

@@ -3,8 +3,15 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 from enum import Enum
 import threading
+import logging
+import os
+import sys
+import sysconfig
+from pathlib import Path
 from types import ModuleType
-from core.constants import MEMORY_MARGIN, META_ARCH, META_CONTEXT_LENGTH, META_BLOCK_COUNT
+from core.constants import (
+    MEMORY_MARGIN, META_ARCH, META_CONTEXT_LENGTH, META_BLOCK_COUNT, NVIDIA_DLL_SUBDIR
+)
 from core.hardware import detect_gpu, free_ram_mb
 from core.settings import LoadParams, SamplingParams
 from core.errors import (
@@ -25,9 +32,26 @@ __all__ = [
 ]
 
 _CONTEXT_FAILED = "Failed to create llama_context"
+_CUDA_LOG_MSG = "Knižnice CUDA z prostredia aplikácie: %s"
+
+log = logging.getLogger(__name__)
+
+
+def _add_nvidia_dlls() -> None:
+    if sys.platform != "win32":
+        return
+    dll_dir = Path(sysconfig.get_paths()["purelib"]).joinpath(*NVIDIA_DLL_SUBDIR)
+    if not dll_dir.is_dir():
+        return
+    path = os.environ.get("PATH", "")
+    if str(dll_dir) in path.split(os.pathsep):
+        return
+    os.environ["PATH"] = str(dll_dir) + os.pathsep + path if path else str(dll_dir)
+    log.info(_CUDA_LOG_MSG, dll_dir)
 
 
 def _import_llama() -> ModuleType:
+    _add_nvidia_dlls()
     try:
         import llama_cpp
     except ImportError as exc:
@@ -36,7 +60,7 @@ def _import_llama() -> ModuleType:
         raise BackendUnavailableError(
             f"{type(exc).__name__}: {exc}",
             message="Engine pre spúšťanie modelov sa nepodarilo spustiť.",
-            hint="Chýba systémová knižnica. CUDA verzia potrebuje nainštalovaný CUDA Toolkit 13 - bez neho použi CPU verziu (requirements-llama-win-cuda.txt)."
+            hint="Chýba alebo je poškodená knižnica, ktorú engine potrebuje. Spusti inštaláciu FUKAI znova."
         )
     return llama_cpp
 

@@ -55,4 +55,16 @@ Chronologický záznam práce, skrátený 2026-11-11. **Rozhodnutia a stav proje
 - Testovacie skripty (kostra `harness.py` + 17 fáz + generátor dát) zostali v scratchpade session, ako na Macu – v repe nie sú. Pri ďalšom teste sa píšu znova podľa §8.3; pasce, ktoré to stálo, sú už v §8.2.
 - Nezmeraný zostal čistý RAM profil: cudzí proces `javaw` držal 13,5 GB a systém bol na 94,5 %.
 
-**Ďalej:** krok 14 – balenie (PyInstaller `--onedir`, C# inštalačka, CUDA bez Toolkitu).
+**2026-11-12 – Mac: výsledok testu na PC a návrh balenia.** Test Windows prešiel 445/445 bez chyby appky (nálezy W1–W5 mimo appky). Rozhodnutia autora ku kroku 14: **inštalačka zostaví prostredie pri inštalácii cez `uv`** (nie PyInstaller), Windows C# inštalačka pre používateľa bez admina, macOS `.pkg`. Overené na PyPI: `nvidia-cublas` 13.0.2.14 a `nvidia-cuda-runtime` 13.0.96 pre `win_amd64` existujú → CUDA bez Toolkitu cez pip. Pripomienky k diagramu autora (dva druhy nekompatibility CUDA, zlyhanie testu backendu, bez internetu) v ALMANAC §10.
+
+Zadanie prieskumu pre PC poslané cez OneDrive (`semestralka/TODO.md`), bez commitu.
+
+**2026-11-12 – PC 1: prieskum ku kroku 14** (výsledky `semestralka/TODO-vysledky-PC.md`, repo bez zmeny). CUDA bez Toolkitu cez `uv` + pip balíky NVIDIA funguje (Gemma 114,7 tok/s, appka 95 tok/s). Zistené: cuBLAS musí byť v `PATH` (nie `add_dll_directory`), wheel vyžaduje AVX2, CUDA od compute capability 7.5 a ovládača 580, warm-up je JIT z PTX (`ComputeCache` existuje), `nvcudart_hybrid64.dll` je z ovládača, VC++ runtime je jediná systémová závislosť, prostredie nie je presunuteľné. Na Macu prenesené do ALMANAC §3, §8.2, §10.
+
+**2026-11-12 – Mac: cuBLAS z prostredia appky.** `_add_nvidia_dlls()` pred importom `llama_cpp` (návrh a test `scratchpad/path`, prepis autor). V prepise `sysconfig.get_path()` namiesto `get_paths()` – na Macu neviditeľné, na každom Windows by appka nenaštartovala (`TypeError` mimo zachytávaných výnimiek); opravené, test nad repom 12/12 (podvrhnutý `win32`, skutočný `probe_engine` na Macu). Skutočná CUDA bez Toolkitu sa overí pri teste inštalačky na PC.
+
+Rozhodnutie autora: VC++ runtime pribalí Windows inštalačka (app-local).
+
+Rady pri chybe enginu prepísal autor pre používateľa (preinštalovať FUKAI, nie Toolkit / requirements). Každý fatálny dialóg pri štarte má za radou cestu k logu (overené naživo: poškodená databáza, neočakávaná chyba, chyba DLL enginu, bez logu).
+
+**Ďalej:** vlastný Metal wheel na M2, manifest verzií, potom C# inštalačka a `.pkg`.
