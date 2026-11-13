@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<!-- --- ./dist/mac_app_installer/welcome.html --- -->
+<html lang="sk">
+<head>
+    <meta charset="UTF-8">
+    <style>
+        :root {
+            color-scheme: light dark;
+            --text: #263449;
+            --heading: #1A365D;
+            --label: #2A64B0;
+            --box: #F2F6FB;
+            --box-border: #DCE7F3;
+            --code: #245A91;
+            --code-bg: #EEF3F9;
+            --muted: #718096;
+            --rule: #DCE4EE;
+        }
+
+        /* Installer pozadie nekreslí – v tmavom vzhľade je pod stránkou tmavý panel */
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --text: #E4F3FB;
+                --heading: #FFFFFF;
+                --label: #6EC6E5;
+                --box: rgba(255, 255, 255, 0.06);
+                --box-border: rgba(255, 255, 255, 0.12);
+                --code: #CDEFFB;
+                --code-bg: rgba(110, 198, 229, 0.16);
+                --muted: rgba(228, 243, 251, 0.6);
+                --rule: rgba(255, 255, 255, 0.15);
+            }
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+            font-size: 12px;
+            line-height: 1.5;
+            color: var(--text);
+            margin: 0;
+            padding: 0;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #10233F, #245A91);
+            color: white;
+            padding: 18px 20px;
+            border-radius: 10px;
+            margin-bottom: 16px;
+        }
+
+        .brand {
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 6px;
+            color: #8EC5FF;
+            margin-bottom: 8px;
+        }
+
+        .header h1 {
+            font-size: 23px;
+            font-weight: 700;
+            margin: 0 0 5px;
+            color: #FFFFFF;
+        }
+
+        .subtitle {
+            font-size: 12px;
+            color: #D8E8F8;
+            margin: 0;
+        }
+
+        .intro {
+            font-size: 12px;
+            margin-bottom: 14px;
+        }
+
+        .section-title {
+            font-size: 13px;
+            font-weight: 700;
+            color: var(--heading);
+            margin: 15px 0 8px;
+        }
+
+        .info-box {
+            background: var(--box);
+            border: 1px solid var(--box-border);
+            border-radius: 8px;
+            padding: 10px 12px;
+            margin-bottom: 10px;
+        }
+
+        .info-box p {
+            margin: 0;
+        }
+
+        .info-label {
+            font-size: 11px;
+            font-weight: 700;
+            color: var(--label);
+            margin-bottom: 3px;
+        }
+
+        ul {
+            padding-left: 18px;
+            margin: 7px 0;
+        }
+
+        li {
+            margin-bottom: 6px;
+        }
+
+        b {
+            color: var(--heading);
+        }
+
+        code {
+            font-family: Menlo, monospace;
+            font-size: 10px;
+            color: var(--code);
+            background: var(--code-bg);
+            padding: 2px 4px;
+            border-radius: 3px;
+        }
+
+        .footer {
+            border-top: 1px solid var(--rule);
+            margin-top: 15px;
+            padding-top: 10px;
+            font-size: 10px;
+            color: var(--muted);
+        }
+
+        .footer strong {
+            color: var(--heading);
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="header">
+        <div class="brand">FUKAI</div>
+        <h1>Vitaj vo FUKAI</h1>
+        <p class="subtitle">Lokálna AI konverzácia. Tvoje modely. Tvoje súkromie.</p>
+    </div>
+
+    <p class="intro">
+        Tento inštalátor pripraví aplikáciu <b>FUKAI</b> pre tvoj Mac.
+        Nainštaluje potrebné komponenty, vytvorí Python prostredie
+        a nakonfiguruje aplikáciu na spustenie.
+    </p>
+
+    <div class="section-title">Čo je potrebné vedieť</div>
+
+    <div class="info-box">
+        <div class="info-label">INTERNET A ÚLOŽISKO</div>
+        <p>
+            <b>Internetové pripojenie je potrebné.</b>
+            Inštalácia stiahne približne 160 MB komponentov.
+            Po dokončení bude aplikácia zaberať približne 510 MB na disku.
+        </p>
+    </div>
+
+    <div class="info-box">
+        <div class="info-label">PRIEBEH INŠTALÁCIE</div>
+        <p>
+            Príprava prostredia môže trvať niekoľko minút.
+            Počas kroku <b>„Spúšťajú sa skripty balíka“</b>
+            inštalátor nezatváraj.
+        </p>
+    </div>
+
+    <div class="info-box">
+        <div class="info-label">JAZYKOVÉ MODELY</div>
+        <p>
+            Súbory <code>.gguf</code> nie sú súčasťou inštalácie.
+            Vlastné jazykové modely pridáš priamo v aplikácii.
+        </p>
+    </div>
+
+    <div class="info-box">
+        <div class="info-label">TVOJE DÁTA</div>
+        <p>
+            Chaty, nastavenia a jazykové modely sa ukladajú lokálne
+            do priečinka:
+            <br>
+            <code>~/Library/Application Support/FUKAI</code>
+        </p>
+    </div>
+
+    <div class="section-title">Technická podpora</div>
+
+    <p>
+        Ak inštalácia zlyhá, podrobnosti nájdeš v logu:
+        <br>
+        <code>/Library/Logs/FUKAI-install.log</code>
+    </p>
+
+    <div class="footer">
+        <strong>FUKAI</strong> · Lokálny AI asistent
+        <br>
+        Slobodný softvér licencovaný pod GNU GPL v3 alebo novšou.
+    </div>
+
+</body>
+</html>

@@ -8,3 +8,5 @@ __pycache__/
 /dist/backend_whls/**/*.whl
 /dist/backend_whls/*.log
 /dist/tools/
+/dist/out/
+/.vscode/
