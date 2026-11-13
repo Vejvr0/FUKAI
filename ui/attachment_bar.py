@@ -1,3 +1,6 @@
+# --- ./ui/attachment_bar.py ---
+
+
 from __future__ import annotations
 from math import ceil
 from PyQt6.QtCore import QEvent, QSize, Qt, QTimer, pyqtSignal

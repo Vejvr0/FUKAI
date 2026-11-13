@@ -1,3 +1,6 @@
+# --- ./core/llm_engine.py ---
+
+
 from __future__ import annotations
 from collections.abc import Iterator
 from dataclasses import dataclass
@@ -271,62 +274,3 @@ class LlmEngine:
     @property
     def finish_reason(self) -> FinishReason | None:
         return self._finish_reason
-
-
-if __name__ == "__main__":
-    import sys
-    import time
-    from core.hardware import detect
-
-    sys.stdout.reconfigure(encoding="utf-8")
-
-    model = sys.argv[1] if len(sys.argv) > 1 else "models/mistral-7b-instruct-v0.2.Q4_K_M.gguf"
-    n_ctx = int(sys.argv[2]) if len(sys.argv) > 2 else 2048
-
-    profil = detect()
-    params = LoadParams.for_hardware(model, profil, n_ctx=n_ctx)
-    print(f"Model:    {params.model_path.name} ({params.model_size_mb} MB)")
-    print(f"Backend:  {profil.backend}  n_threads={params.n_threads}  "
-          f"n_gpu_layers={params.n_gpu_layers}  n_ctx={params.n_ctx}")
-
-    engine = LlmEngine()
-    start = time.perf_counter()
-    notices = engine.load(params)
-    print(f"Načítaný: za {time.perf_counter() - start:.1f} s")
-    for notice in notices:
-        print(f"          {notice.log_line()}")
-    print(f"Údaje:    n_ctx={engine.n_ctx}  n_ctx_train={engine.n_ctx_train}  "
-          f"n_layers={engine.n_layers}  offloadable={engine.n_layers_offloadable}")
-    print(f"Tokeny:   'Ahoj svet' -> {engine.tokenize('Ahoj svet')}")
-
-    print("\n--- streaming ---")
-    messages = [
-        {"role": "system", "content": "Si stručný asistent, odpovedaj po slovensky."},
-        {"role": "user", "content": "Ahoj, kto si?"},
-    ]
-    start, text = time.perf_counter(), ""
-    for piece in engine.stream(messages, SamplingParams(max_tokens=200)):
-        print(piece, end="", flush=True)
-        text += piece
-    elapsed = time.perf_counter() - start
-    tokens = engine.count_tokens(text)
-    print(f"\n\n{tokens} tokenov za {elapsed:.1f} s ({tokens / elapsed:.1f} t/s), "
-          f"koniec: {engine.finish_reason}")
-
-    print("\n--- stop po 10 kúskoch ---")
-    stream = engine.stream(
-        [{"role": "user", "content": "Vymenuj všetky okresy na Slovensku."}],
-        SamplingParams(max_tokens=500),
-    )
-    for i, piece in enumerate(stream, start=1):
-        print(piece, end="", flush=True)
-        if i == 10:
-            engine.request_stop()
-    print(f"\nkoniec: {engine.finish_reason}")
-
-    print("\n--- limit max_tokens=5 ---")
-    text = "".join(engine.stream(messages, SamplingParams(max_tokens=5)))
-    print(f"{text!r}  koniec: {engine.finish_reason}")
-
-    engine.unload()
-    print(f"\nUvoľnený: is_loaded={engine.is_loaded}")

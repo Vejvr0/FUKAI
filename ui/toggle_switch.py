@@ -1,3 +1,6 @@
+# --- ./ui/toggle_switch.py ---
+
+
 from __future__ import annotations
 from PyQt6.QtWidgets import QAbstractButton, QWidget
 from PyQt6.QtCore import QEasingCurve, QPropertyAnimation, QRectF, Qt, pyqtProperty

@@ -1,3 +1,6 @@
+# --- ./ui/chat_view.py ---
+
+
 from __future__ import annotations
 from PyQt6.QtCore import Qt, QSize, pyqtSignal
 from PyQt6.QtGui import QIcon

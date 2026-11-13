@@ -1,3 +1,6 @@
+# --- ./core/settings.py ---
+
+
 from __future__ import annotations
 from dataclasses import dataclass, replace, fields
 from pathlib import Path
@@ -219,87 +222,3 @@ class ChatProperties:
 
     def needs_reload(self, other: ChatProperties) -> bool:
         return self.load.clamped() != other.load.clamped()
-
-
-if __name__ == "__main__":
-    import json
-    import sys
-    import tempfile
-    from core.hardware import detect
-
-    sys.stdout.reconfigure(encoding="utf-8")
-
-    hw = detect()
-    model = "models/mistral-7b-instruct-v0.2.Q4_K_M.gguf"
-
-    print("--- predvolené hodnoty pre model ---")
-    print(f"hardvér:      backend={hw.backend}  n_threads={hw.n_threads}  "
-          f"n_gpu_layers={hw.n_gpu_layers}")
-    props = ChatProperties.defaults_for(model, hw, meta=ModelMeta("llama", 32768, 32))
-    print(f"meta 32768:   n_ctx={props.load.n_ctx} (predvolené {N_CTX_DEFAULT} sa zmestí)")
-    print(f"meta 2048:    n_ctx="
-          f"{ChatProperties.defaults_for(model, hw, meta=ModelMeta('llama', 2048, 32)).load.n_ctx}"
-          f" (orezané na možnosti modelu)")
-    print(f"bez meta:     n_ctx={ChatProperties.defaults_for(model, hw).load.n_ctx}")
-    print(f"prázdna meta: n_ctx={ChatProperties.defaults_for(model, hw, meta=ModelMeta()).load.n_ctx}"
-          f" (n_ctx_train je None, nie 0)")
-
-    print("\n--- blob pre properties.data ---")
-    blob = props.to_dict()
-    print(f"skupiny:      {list(blob)}")
-    for group, values in blob.items():
-        print(f"{group + ':':<14}{values}")
-    print(f"model_path:   {'JE V BLOBE!' if 'model_path' in blob['load'] else 'nie je (§7.2)'}")
-
-    print("\n--- round-trip cez JSON ---")
-    back = ChatProperties.from_dict(json.loads(json.dumps(blob)), model)
-    print(f"rovnaké:      {back == props}")
-    print(f"stop:         {type(props.sampling.stop).__name__} → JSON "
-          f"{type(json.loads(json.dumps(blob))['sampling']['stop']).__name__} → "
-          f"{type(back.sampling.stop).__name__}")
-
-    print("\n--- blob z inej verzie appky ---")
-    dirty = ChatProperties.from_dict(
-        {"load": {"n_ctx": 99, "neznamy_kluc": 1, "model_path": "C:/zly.gguf"},
-         "sampling": {"temperature": 9.9, "stop": ["</s>"]}},
-        model,
-    )
-    print(f"n_ctx 99:     {dirty.load.n_ctx} (orezané na N_CTX_MIN)")
-    print(f"temp 9.9:     {dirty.sampling.temperature} (orezaná na TEMPERATURE_MAX)")
-    print(f"kľúč navyše:  zahodený, n_batch={dirty.load.n_batch} je predvolený")
-    print(f"model_path:   {dirty.load.model_path.name} (z argumentu, nie z blobu)")
-    print(f"stop:         {dirty.sampling.stop}")
-    print(f'"load": null: n_ctx={ChatProperties.from_dict({"load": None}, model).load.n_ctx}')
-    print(f"prázdny blob: n_ctx={ChatProperties.from_dict({}, model).load.n_ctx}")
-
-    print("\n--- needs_reload ---")
-    other_ctx = replace(props, load=replace(props.load, n_ctx=8192))
-    other_temp = replace(props, sampling=replace(props.sampling, temperature=0.1))
-    small = replace(props, load=replace(props.load, n_ctx=99))
-    clamped_min = replace(props, load=replace(props.load, n_ctx=256))
-    print(f"n_ctx 4096→8192:     {props.needs_reload(other_ctx)}")
-    print(f"temperature 0.7→0.1: {props.needs_reload(other_temp)}")
-    print(f"n_ctx 99 vs 256:     {small.needs_reload(clamped_min)} (obe strany orezané)")
-
-    print("\n--- validate() ---")
-    with tempfile.TemporaryDirectory() as tmp:
-        good = Path(tmp) / "model.gguf"
-        good.write_bytes(b"GGUF" + b"\x00" * 60)
-        bad_header = Path(tmp) / "hlavicka.gguf"
-        bad_header.write_bytes(b"ZIP!" + b"\x00" * 60)
-        bad_suffix = Path(tmp) / "model.bin"
-        bad_suffix.write_bytes(b"GGUF" + b"\x00" * 60)
-
-        for path in (good, bad_header, bad_suffix, Path(tmp) / "niet.gguf"):
-            try:
-                LoadParams(path).validate()
-                result = "OK"
-            except (ModelNotFoundError, ModelFormatError) as exc:
-                result = f"{type(exc).__name__}: {exc.message}"
-            print(f"{path.name:<14}{result}")
-
-    print("\n--- ModelMeta ---")
-    meta = ModelMeta("llama", 32768, 32)
-    print(f"to_dict:      {meta.to_dict()}")
-    print(f"round-trip:   {ModelMeta.from_dict(json.loads(json.dumps(meta.to_dict()))) == meta}")
-    print(f"prázdny dict: {ModelMeta.from_dict({})}")

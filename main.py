@@ -1,3 +1,6 @@
+# --- main.py ---
+
+
 import sys
 from ui.application import Application
 

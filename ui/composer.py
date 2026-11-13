@@ -1,3 +1,6 @@
+# --- ./ui/composer.py ---
+
+
 from __future__ import annotations
 from pathlib import Path
 from typing import Callable
@@ -227,7 +230,6 @@ class Composer(QFrame):
         self._input.installEventFilter(self)
         self._input.submitted.connect(self._submit)
         self._input.textChanged.connect(self._update_buttons)
-        # Pribudnutá alebo odobraná príloha mení, či sa dá odoslať.
         self.attachments.changed.connect(self._update_buttons)
         
         hint = QLabel("Enter odoslať · Shift+Enter nový riadok")
@@ -309,11 +311,10 @@ class Composer(QFrame):
         self._attach.setVisible(attachments)
         self._web.setVisible(web_search)
         if not web_search:
-            self.set_web(False)     # bez signálu - globálne vypnutie nemení vlastnosti chatu (§7.1)
+            self.set_web(False)
 
 
     def set_web(self, on: bool) -> None:
-        """Stav zo vlastností chatu - bez signálu `web_toggled`, inak by sa hneď zapísal späť."""
         blocked = self._web.blockSignals(True)
         self._web.setChecked(on)
         self._web.blockSignals(blocked)
@@ -370,7 +371,6 @@ class Composer(QFrame):
     def begin_turn(self, question: str) -> None:
         if self._input.toPlainText().strip() == question:
             self._input.clear()
-        # Prílohy odišli so správou - z baru zmiznú, ale držíme ich pre prípad vrátenia ťahu.
         sent = self.attachments.attachments()
         if sent:
             self._sent = sent
@@ -412,7 +412,6 @@ class Composer(QFrame):
     
     def _submit(self) -> None:
         text = self._input.toPlainText().strip()
-        # Samotná príloha je platná správa - text nie je povinný.
         if self._busy or not (text or self.attachments.attachments()):
             return
         self.send_requested.emit(text)

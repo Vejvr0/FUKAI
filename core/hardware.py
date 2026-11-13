@@ -1,3 +1,6 @@
+# --- ./core/hardware.py ---
+
+
 import json
 import shutil
 import subprocess
@@ -359,34 +362,3 @@ def check_gpu(profil: HardwareProfile) -> Notice | None:
         return Notice.warning(f"Grafická karta {gpu.name} sa nepoužije, model pobeží na CPU.", hint=hint)
 
     return None
-
-
-if __name__ == "__main__":
-    import sys
-    sys.stdout.reconfigure(encoding="utf-8")
-
-    profil = detect()
-    print(f"Systém:     {profil.system} {profil.release}  (porovnáva sa {profil.os_version})")
-    print(f"Jadrá:      {profil.cores_physical} fyzických / {profil.cores_logical} logických"
-          + (f" / {profil.cores_performance} výkonných" if profil.hybrid else " (nehybridné)"))
-    print(f"RAM:        {profil.ram_total_mb / 1024:.1f} GB celkom")
-    print(f"RAM voľná:  {profil.ram_available_mb / 1024:.1f} GB")
-
-    if profil.gpu:
-        print(f"Grafika:    {profil.gpu.name}")
-        if profil.gpu.vram_total_mb:
-            print(f"VRAM:       {profil.gpu.vram_total_mb / 1024:.1f} GB celkom, "
-                  f"{profil.gpu.vram_free_mb / 1024:.1f} GB voľnej")
-        print(f"Compute:    {profil.gpu.compute or '-'}")
-    else:
-        print("Grafika:    nenašla sa")
-
-    print(f"\nBackend:      {profil.backend}")
-    print(f"n_threads:    {profil.n_threads}")
-    print(f"n_gpu_layers: {profil.n_gpu_layers}")
-
-    print("\nKontroly:")
-    for nazov, fn in (("OS", check_os), ("CPU", check_cores),
-                      ("RAM", check_ram), ("GPU", check_gpu)):
-        vysledok = fn(profil)
-        print(f"  {nazov:4} {vysledok.log_line() if vysledok else 'prešla'}")

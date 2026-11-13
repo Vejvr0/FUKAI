@@ -1,3 +1,6 @@
+# --- ./ui/model_library.py ---
+
+
 from __future__ import annotations
 import logging
 import shutil
@@ -243,4 +246,3 @@ class ModelLibrary(QObject):
     def _on_cancelled(self) -> None:
         self._cancel = None
         self.import_cancelled.emit()
-        

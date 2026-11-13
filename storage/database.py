@@ -1,3 +1,6 @@
+# --- ./storage/database.py ---
+
+
 from __future__ import annotations
 import sqlite3
 import threading
@@ -271,100 +274,3 @@ class Database:
     def set_properties(self, chat_id: int, data: dict) -> None:
         data_json = json.dumps(data)
         self.execute("UPDATE properties SET data = ? WHERE chat_id = ?", (data_json, chat_id,))
-
-
-if __name__ == "__main__":
-    import shutil
-    import sys
-
-    sys.stdout.reconfigure(encoding="utf-8")
-
-    def props(n_ctx: int, temperature: float) -> dict:
-        """Blob vo formáte z ALMANAC §7.2 – tri skupiny."""
-        return {
-            "load": {"n_ctx": n_ctx, "n_gpu_layers": -1, "n_threads": 8,
-                     "n_batch": 512, "use_mmap": True},
-            "sampling": {"temperature": temperature, "max_tokens": 1024, "top_p": 0.95,
-                         "top_k": 40, "repeat_penalty": 1.1, "seed": None, "stop": []},
-            "chat": {"system_prompt": "", "web_search": False},
-        }
-
-    home = Path(__file__).resolve().parent.parent / "devdata" / "selftest-storage"
-    shutil.rmtree(home, ignore_errors=True)
-    home.mkdir(parents=True)
-
-    with Database(home / "fukai.db") as db:
-        print(f"súbor:        {db.path}")
-        print(f"user_version: {db.query('PRAGMA user_version')[0]['user_version']}")
-        print(f"foreign_keys: {db.query('PRAGMA foreign_keys')[0]['foreign_keys']}")
-        print(f"tabuľky:      {[r['name'] for r in db.query(
-            'SELECT name FROM sqlite_master WHERE type = ? ORDER BY name', ('table',))]}")
-
-        print("\n--- modely ---")
-        gemma = db.add_model("Gemma 3 4B", "gemma-3-4b-it-Q4_K_M.gguf", {"n_layers": 34})
-        mistral = db.add_model("Mistral 7B", "mistral-7b-instruct-v0.2.Q4_K_M.gguf", {"n_layers": 32})
-        print(f"pridané id:   {gemma}, {mistral}")
-        print(f"get_model({gemma}):  {db.get_model(gemma)['title']}, meta ako dict: {db.get_model(gemma)['meta']}")
-        print(f"get_model(999): {db.get_model(999)}")
-        db.mark_model_used(mistral)
-        print(f"po mark_model_used({mistral}): {[m['title'] for m in db.list_models()]}")
-
-        print("\n--- chat a správy ---")
-        chat = db.create_chat(gemma, "Nový chat", props(4096, 0.7))
-        print(f"create_chat:  id={chat}, properties riadkov="
-              f"{db.query('SELECT COUNT(*) AS n FROM properties')[0]['n']}")
-
-        db.add_message(chat, {"text": "Ahoj"}, 12, "user")
-        db.add_message(chat, {"text": "Ahoj, ako pomôžem?"}, 40, "assistant")
-        print(f"get_messages: {[(m['role'], m['data']['text'], m['tokens']) for m in db.get_messages(chat)]}")
-        print(f"content_tokens: {db.content_tokens(chat)}")
-
-        db.rename_chat(chat, "Premenovaný")
-        print(f"rename_chat:  {db.list_chats()[0]['title']}")
-
-        print("\n--- tokeny správ (cache, §7.2) ---")
-        m1 = db.add_message(chat, {"text": "Správa bez tokenov"}, None, "user")
-        m2 = db.add_message(chat, {"text": "Odpoveď bez tokenov"}, None, "assistant")
-        pairs = lambda: {m["id"]: m["tokens"] for m in db.get_messages(chat)}
-        print(f"po add_message:        {pairs()}")
-        db.set_message_tokens({m1: 11, m2: 22})
-        print(f"po set_message_tokens: {pairs()}")
-        print(f"hodnoty nepomiešané s id: {pairs()[m1] == 11 and pairs()[m2] == 22}")
-        db.set_message_tokens({})
-        db.set_message_tokens({999: 5})
-        print(f"prázdny dict a neexistujúce id: bez chyby, content_tokens={db.content_tokens(chat)}")
-
-        print("\n--- vlastnosti ---")
-        print(f"get_properties: n_ctx={db.get_properties(chat)['load']['n_ctx']}, "
-              f"temperature={db.get_properties(chat)['sampling']['temperature']}")
-        db.set_properties(chat, props(4096, 0.3))
-        print(f"po set_properties: temperature={db.get_properties(chat)['sampling']['temperature']}")
-
-        print("\n--- výmena modelu (§7.1: celý reset + NULL tokeny) ---")
-        db.set_model(chat, mistral, props(8192, 0.7))
-        after = db.get_properties(chat)
-        print(f"model_id:     {db.query('SELECT model_id FROM chats WHERE id = ?', (chat,))[0]['model_id']}"
-              f" (bol {gemma}, je {mistral})")
-        print(f"n_ctx:        {after['load']['n_ctx']} (predvolený pre nový model)")
-        print(f"temperature:  {after['sampling']['temperature']} (ručných 0.3 sa reset zbavil)")
-        print(f"tokeny správ: {[m['tokens'] for m in db.get_messages(chat)]} → treba pretokenizovať")
-        print(f"content_tokens pri NULL: {db.content_tokens(chat)}")
-
-        print("\n--- atomicita a kaskády ---")
-        before = db.query("SELECT COUNT(*) AS n FROM chats")[0]["n"]
-        try:
-            db.create_chat(99999, "Zlý model", props(4096, 0.7))
-        except StorageError:
-            pass
-        after_n = db.query("SELECT COUNT(*) AS n FROM chats")[0]["n"]
-        print(f"create_chat s neexistujúcim modelom: chatov {before} → {after_n}"
-              f" {'(atomické)' if before == after_n else '(SIROTA!)'}")
-        tokens = None
-
-        db.delete_model(mistral)
-        print(f"po delete_model je chats.model_id: "
-              f"{db.query('SELECT model_id FROM chats WHERE id = ?', (chat,))[0]['model_id']} (SET NULL)")
-
-        db.delete_chat(chat)
-        print(f"po delete_chat zostalo správ: {db.query('SELECT COUNT(*) AS n FROM content')[0]['n']}, "
-              f"vlastností: {db.query('SELECT COUNT(*) AS n FROM properties')[0]['n']} (CASCADE)")

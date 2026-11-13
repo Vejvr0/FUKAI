@@ -1,3 +1,6 @@
+# --- ./ui/splash.py ---
+
+
 from __future__ import annotations
 from PyQt6.QtWidgets import QSplashScreen
 from PyQt6.QtCore import QRectF, Qt
@@ -42,5 +45,3 @@ class SplashScreen(QSplashScreen):
     
     def mousePressEvent(self, event) -> None:
         pass
-    
-        

@@ -1,5 +1,8 @@
+# --- ./core/errors.py ---
+
+
 from __future__ import annotations
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
 
 __all__ = [
@@ -144,16 +147,7 @@ class InsufficientMemoryError(ModelError):
     default_message = "Na načítanie modelu nie je dosť operačnej pamäte."
     default_hint = "Zvoľ menší model, zníž dĺžku kontextu, alebo uber vrstvy na GPU."
 
-    def __init__(
-        self,
-        detail: str = "",
-        *,
-        needed_mb: float | None = None,
-        available_mb: float | None = None,
-        where: str = "pamäti",
-        message: str | None = None,
-        hint: str | None = None,
-    ) -> None:
+    def __init__(self, detail: str = "", *, needed_mb: float | None = None, available_mb: float | None = None, where: str = "pamäti", message: str | None = None, hint: str | None = None) -> None:
         self.needed_mb = needed_mb
         self.available_mb = available_mb
         if message is None and needed_mb is not None and available_mb is not None:

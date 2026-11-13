@@ -1,3 +1,6 @@
+# --- ./ui/style.py ---
+
+
 import re
 from string import Template
 from PyQt6.QtGui import QColor

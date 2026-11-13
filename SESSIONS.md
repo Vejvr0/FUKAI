@@ -73,4 +73,8 @@ Rady pri chybe enginu prepísal autor pre používateľa (preinštalovať FUKAI,
 - **`dist/manifest.json`, `dist/make_locks.py`, zámky pre tri backendy** (verzie a hashe všetkých balíkov z PyPI), `requirements-llama-*.txt` zrušené. Inštalácia zo zámku s `--require-hashes` overená, aj odmietnutie pokazeného hashu.
 - **`hw.json` a `check_gpu`:** minimum macOS 14, compute capability 7.5 namiesto mapy architektúr, rady pre používateľa. V prepise dve chyby, ktoré by sa na Macu neukázali (`TypeError` pri každej NVIDIA karte, preklep kľúča vypínajúci všetky kontroly) – opravené.
 
-**Ďalej:** commit prípravy balíkov → repo na vydania (autor) → `provision.sh` a `.pkg` (Mac), C# inštalačka (Windows). Otvorené: kam inštalovať na Macu (A `/Applications` s heslom / B len pre používateľa).
+**2026-11-13 – vydania wheelov.** Repo FUKAI zverejnené (autor) namiesto samostatného repa na vydania; kontrola histórie: bez tajomstiev, veľkých súborov a lokálnych ciest, viditeľný je len e-mail autora (commity, `archiv/ALMANAC-2026-11-11.md`). Tri vydania wheelov hotové, stiahnutie bez prihlásenia overené, `releases` v manifeste doplnené.
+
+**2026-11-13 – Mac: spúšťač, upratanie, licencia.** Rozhodnutia autora: inštalácia do `/Applications` (A), spúšťač v C, `sk.vavro.fukai`, GPL-3.0-or-later, verzia 1.0. Skúšobný `FUKAI.app` v scratchpade: spúšťač načíta `libpython` do vlastného procesu → menu a Dock „FUKAI“ (overené autorom), prostredie a Metal z bundlu, natívne okno pri chýbajúcom prostredí (overené autorom), obnova okien po páde sa nezopakovala. Autor upratal komentáre a zmazal self-testy vo všetkých moduloch; AST porovnanie: kód bez zmeny, regresia (appka so správou, `PATH`, fatálne dialógy) prechádza. `LICENSE` (oficiálny text GPL v3) a `THIRD_PARTY_LICENSES.md` (vygenerované zo zámku).
+
+**Ďalej:** commit (upratanie + licencia) → prepis `launcher.c` a `Info.plist` do `dist/mac_app_installer/` → `provision.sh` → `build_pkg.sh` → test `.pkg`; potom C# inštalačka.

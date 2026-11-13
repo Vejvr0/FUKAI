@@ -1,3 +1,6 @@
+# --- ./core/log.py ---
+
+
 from __future__ import annotations
 import faulthandler
 import logging
@@ -6,9 +9,12 @@ from pathlib import Path
 from core.constants import LOG_BACKUPS, LOG_MAX_BYTES, LOG_FORMAT, OWN_PACKAGES
 from core.paths import crash_log_path, logs_path, ensure_dir
 
-__all__ = ["setup_logging", "enable_crash_log"]
+__all__ = [
+    "setup_logging",
+    "enable_crash_log"
+]
 
-_crash_file = None      # faulthandler potrebuje otvorený súbor po celý beh procesu
+_crash_file = None
 
 
 def setup_logging(path: Path | None = None) -> Path | None:
@@ -28,9 +34,6 @@ def setup_logging(path: Path | None = None) -> Path | None:
 
 
 def enable_crash_log(path: Path | None = None) -> Path | None:
-    """Tvrdý pád v C kóde (llama.cpp, Metal, CUDA, Qt) Python nezachytí a fukai.log o ňom
-    nič nepovie. faulthandler pri ňom zapíše traceback všetkých vlákien do samostatného súboru -
-    nie do fukai.log, ten pri rotácii mení meno. Nikdy nevyhodí výnimku."""
     global _crash_file
     path = path or crash_log_path()
     try:

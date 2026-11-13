@@ -1,3 +1,6 @@
+# --- ./ui/toast.py ---
+
+
 from __future__ import annotations
 from PyQt6.QtCore import QEasingCurve, QEvent, QObject, Qt, QTimeLine, pyqtSignal
 from PyQt6.QtWidgets import (
@@ -66,7 +69,7 @@ class Toast(QFrame):
             layout.addWidget(self._progress)
             
         self._timeline: QTimeLine | None = None
-        duration = 0 if persistent else DURATIONS[notice.severity]     # 0 = bez časovej osi, zavrie ho volajúci
+        duration = 0 if persistent else DURATIONS[notice.severity]
         if duration:
             bar = QProgressBar()
             bar.setObjectName("toastTimeline")

@@ -1,3 +1,6 @@
+# --- ./ui/sidebar.py ---
+
+
 from __future__ import annotations
 from typing import Callable
 from PyQt6.QtWidgets import (
@@ -32,10 +35,6 @@ CHAT_ID = Qt.ItemDataRole.UserRole
 
 
 class _ChatRow(QFrame):
-    """Riadok zoznamu chatov. Je to widget v položke (`setItemWidget`), nie kreslený text –
-    inak sa doň nedá dať tlačidlo ⋯ ani vstup na premenovanie. Dôsledok: `itemClicked`
-    zoznamu sa už nevyšle (widget udalosť spotrebuje, tá istá pasca ako `QWidgetAction`
-    v menu modelov), preto vlastný `clicked`."""
     clicked = pyqtSignal()
     menu_requested = pyqtSignal()
     rename_submitted = pyqtSignal(str)
@@ -105,7 +104,6 @@ class _ChatRow(QFrame):
 
 
     def set_menu_open(self, open_: bool) -> None:
-        """Kým je menu otvorené, myš je mimo riadku – bez tohto by ⋯ zmizlo pod menu."""
         self._menu_open = open_
         self._update_button()
 
@@ -193,8 +191,7 @@ class _ChatRow(QFrame):
 
     def _apply_title(self) -> None:
         margins = self.contentsMargins()
-        width = (self.width() - margins.left() - margins.right()
-                 - CHAT_ROW_BUTTON - self.layout().spacing())
+        width = (self.width() - margins.left() - margins.right() - CHAT_ROW_BUTTON - self.layout().spacing())
         metrics = self._label.fontMetrics()
         self._label.setText(metrics.elidedText(self._title, Qt.TextElideMode.ElideRight, max(0, width)))
 
@@ -354,9 +351,6 @@ class Sidebar(QFrame):
         row.set_menu_open(True)
         chosen = menu.exec(row.mapToGlobal(QPoint(row.width() - CHAT_MENU_WIDTH, row.height())))
         menu.deleteLater()
-        # Kým beží exec(), zoznam mohol vzniknúť nanovo (dobehla odpoveď → chats_changed) a pôvodný
-        # riadok je zmazaný – siahnuť naň zhodí appku. Akcia sa preto vykoná až tu, po návrate
-        # z menu, a riadok sa hľadá znova podľa id (zmazaný chat už riadok nemá).
         row = self._rows.get(chat_id)
         if row is not None:
             row.set_menu_open(False)

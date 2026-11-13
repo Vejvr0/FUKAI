@@ -1,8 +1,13 @@
+# --- ./core/paths.py ---
+
+
 from __future__ import annotations
 import os
 import platformdirs
 from pathlib import Path
-from core.constants import APP_NAME, CRASH_LOG_FILENAME, SETTINGS_FILENAME, DB_FILENAME, LOGS_FILENAME, MODELS_DIRNAME
+from core.constants import (
+    APP_NAME, CRASH_LOG_FILENAME, SETTINGS_FILENAME, DB_FILENAME, LOGS_FILENAME, MODELS_DIRNAME
+)
 
 __all__ = [
     "APP_NAME",
@@ -47,15 +52,3 @@ def ensure_dir(path: str | Path) -> Path:
     path = Path(path)
     path.mkdir(parents=True, exist_ok=True)
     return path
-
-
-if __name__ == "__main__":
-    import sys
-
-    sys.stdout.reconfigure(encoding="utf-8")
-
-    print(f"app_dir            {app_dir()}")
-    print(f"settings_path      {settings_path()}")
-    print(f"db_path            {db_path()}")
-    print(f"default_models_dir {default_models_dir()}")
-    print(f"\nexistuje už app_dir? {app_dir().exists()}")

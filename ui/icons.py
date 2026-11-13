@@ -1,10 +1,16 @@
+# --- ./ui/icons.py ---
+
+
 from pathlib import Path
 from PyQt6.QtCore import QByteArray, Qt
 from PyQt6.QtGui import QGuiApplication, QIcon, QPainter, QPixmap
 from PyQt6.QtSvg import QSvgRenderer
 from ui.constants import ICONS_DIR, ICON_SIZE, ICON_DISABLED_OPACITY
 
-__all__ = ["icon", "pixmap"]
+__all__ = [
+    "icon",
+    "pixmap"
+]
 
 
 def _dpr() -> float:

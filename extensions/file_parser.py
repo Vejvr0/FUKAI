@@ -1,3 +1,6 @@
+# --- ./extensions/file_parser.py ---
+
+
 from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
@@ -18,7 +21,8 @@ __all__ = [
 class Attachment:
     title: str
     text: str
-    trimmed: bool = False      # orezaná na rozpočet kontextu pri pripnutí (§2)
+    trimmed: bool = False
+
 
     @property
     def chars(self) -> int:

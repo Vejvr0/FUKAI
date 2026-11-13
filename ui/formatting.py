@@ -1,3 +1,6 @@
+# --- ./ui/formatting.py ---
+
+
 from __future__ import annotations
 from ui.constants import TOKENS_PER_PAGE
 

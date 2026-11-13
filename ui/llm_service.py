@@ -1,3 +1,6 @@
+# --- ./ui/llm_service.py ---
+
+
 from __future__ import annotations
 import itertools
 from PyQt6.QtCore import QObject, QThread, pyqtSignal

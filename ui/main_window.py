@@ -1,3 +1,6 @@
+# --- ./ui/main_window.py ---
+
+
 from __future__ import annotations
 import logging
 from pathlib import Path
@@ -167,7 +170,6 @@ class MainWindow(QMainWindow):
     
            
     def show_notice(self, notice: Notice, *, persistent: bool = False, progress: bool = False) -> Toast:
-        # Jediné miesto, kadiaľ idú všetky hlásenia - do logu aj s `detail`, ktorý toast neukazuje.
         log.log(_LEVELS[notice.severity], "%s | %s", notice.message, notice.detail or "-")
         return self._toast.show_notice(notice, persistent=persistent, progress=progress)
     

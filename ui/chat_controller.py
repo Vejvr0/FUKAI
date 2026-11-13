@@ -1,3 +1,6 @@
+# --- ./ui/chat_controller.py ---
+
+
 from __future__ import annotations
 import logging
 from dataclasses import dataclass, field, replace
@@ -50,7 +53,7 @@ class ChatController(QObject):
     turn_rolled_back = pyqtSignal(str)
     notice = pyqtSignal(object)
     model_changed = pyqtSignal(object)
-    turn_status = pyqtSignal(str)                    # stav v bubline, "" = skryť
+    turn_status = pyqtSignal(str)
 
 
     def __init__(self, settings: SettingsStore, hardware: HardwareProfile, database: Database, llm: LlmService, web: WebService, parent: QObject | None = None) -> None:
@@ -250,14 +253,12 @@ class ChatController(QObject):
             turn.web_query = question
             turn.web_job = self._web.search(question)
         self.busy_changed.emit(True)
-        self.turn_started.emit(question, [{"title": item.title} for item in attachments],
-                               turn.web_query is not None)
+        self.turn_started.emit(question, [{"title": item.title} for item in attachments], turn.web_query is not None)
 
         if self._loaded is None or self._loaded.clamped() != props.load.clamped():
             turn.loading = True
             load = props.load
-            log.info("Načítavam model %s · n_ctx %s · n_gpu_layers %s · n_threads %s",
-                     model["title"], load.n_ctx, load.n_gpu_layers, load.n_threads)
+            log.info("Načítavam model %s · n_ctx %s · n_gpu_layers %s · n_threads %s", model["title"], load.n_ctx, load.n_gpu_layers, load.n_threads)
             self.loading_started.emit(model["title"])
             self._llm.load(props.load)
         else:
@@ -389,11 +390,13 @@ class ChatController(QObject):
             self._roll_back()
             return
         cut = [title for title, _, trimmed in result.attachments if trimmed]
-        log.info("Odpoveď: %s · %d tokenov · %s tok/s · prvý token %s s · celkom %.1f s · prompt ~%d · "
-                 "prílohy %d (orezané %d) · zdroje %d/%d · vynechané správy %d", result.finish_reason.value,
-                 result.completion_tokens, f"{result.tokens_per_s:.1f}" if result.tokens_per_s else "-",
-                 f"{result.first_token_s:.2f}" if result.first_token_s is not None else "-", result.total_s,
-                 result.prompt_tokens, len(turn.attachments), len(cut), len(result.web_used), len(turn.sources), len(result.dropped))
+        log.info(
+            "Odpoveď: %s · %d tokenov · %s tok/s · prvý token %s s · celkom %.1f s · prompt ~%d · "
+            "prílohy %d (orezané %d) · zdroje %d/%d · vynechané správy %d", result.finish_reason.value,
+            result.completion_tokens, f"{result.tokens_per_s:.1f}" if result.tokens_per_s else "-",
+            f"{result.first_token_s:.2f}" if result.first_token_s is not None else "-", result.total_s,
+            result.prompt_tokens, len(turn.attachments), len(cut), len(result.web_used), len(turn.sources), len(result.dropped)
+        )
 
         answer = {
             "text": result.text,

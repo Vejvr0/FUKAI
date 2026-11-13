@@ -1,3 +1,6 @@
+# --- ./ui/markdown.py ---
+
+
 from __future__ import annotations
 import re
 from dataclasses import dataclass
@@ -154,7 +157,7 @@ def style_tables(doc: QTextDocument, theme: str) -> None:
         table = QTextTableFormat()
         table.setBorder(TABLE_BORDER)
         table.setBorderStyle(QTextFrameFormat.BorderStyle.BorderStyle_Solid)
-        table.setBorderBrush(qcolor(tokens["accent"]))     # qcolor: token môže byť rgba(...)
+        table.setBorderBrush(qcolor(tokens["accent"]))
         table.setBorderCollapse(True)
         table.setCellPadding(TABLE_PADDING)
         table.setCellSpacing(0)
@@ -165,81 +168,3 @@ def style_tables(doc: QTextDocument, theme: str) -> None:
             header = cell.format()
             header.setBackground(qcolor(tokens["chip"]))
             cell.setFormat(header)
-
-
-if __name__ == "__main__":
-    import sys
-
-    sys.stdout.reconfigure(encoding="utf-8")
-    from PyQt6.QtWidgets import QApplication
-
-    app = QApplication([])
-    failed = 0
-
-    def check(label: str, passed: bool, detail: str = "") -> None:
-        global failed
-        failed += 0 if passed else 1
-        print(f"  {'OK  ' if passed else 'CHYBA'} {label}" + (f"   {detail}" if detail else ""))
-
-    def kinds(text: str) -> str:
-        return " ".join(part.kind.value for part in split_markdown(text))
-
-    print("--- delenie na casti ---")
-    check("cisty text", kinds("len veta") == "text", kinds("len veta"))
-    check("text + kod + text",
-          kinds("pred\n\n```python\nx = 1\n```\n\npo") == "text code text")
-    check("kod bez jazyka", split_markdown("```\nx = 1\n```")[0].language == "")
-    check("jazyk sa normalizuje na male", split_markdown("```PYTHON\nx\n```")[0].language == "python")
-    check("vlnovkovy fence", kinds("~~~js\nlet a = 1;\n~~~") == "code")
-    check("tri apostrofy vnutri dlhsieho fence",
-          split_markdown("````\n```\nx\n````")[0].content == "```\nx")
-    check("neuzavrety fence je stale kod",
-          kinds("text\n\n```python\nx = 1\ny = 2") == "text code",
-          repr(split_markdown("text\n\n```python\nx = 1\ny = 2")[1].content))
-    check("tabulka na konci", kinds("pred\n\n| a | b |\n|---|---|\n| 1 | 2 |") == "text table")
-    check("tabulka hned na zaciatku", kinds("| a | b |\n|---|---|\n| 1 | 2 |") == "table")
-    check("zvislice bez oddelovaca nie su tabulka", kinds("a | b\nc | d") == "text")
-    check("prazdny vstup", split_markdown("") == [])
-    check("samy biely znak", split_markdown("\n\n   \n") == [])
-
-    print("\n--- rozdelenie realnej odpovede ---")
-    answer = ("Postup:\n\n1. prvy\n2. druhy\n\n```python\ndef f(x):\n    return x\n```\n\n"
-              "Tabulka:\n\n| Model | tok/s |\n|---|---:|\n| Gemma | 107 |\n\nKoniec.")
-    for part in split_markdown(answer):
-        head = part.content.split("\n")[0][:40]
-        print(f"  {part.kind.value:5} {part.language or '-':8} {len(part.content):4} znakov | {head}")
-
-    print("\n--- zvyraznenie kodu ---")
-    html = code_html("def f(x):\n    return x  # pozn\n", "python", "light")
-    check("obsahuje explicitnu farbu textu", "color:#CDEFFB" in html.replace(" ", ""))
-    check("obsahuje farbu klucoveho slova", "#6EC6E5" in html)
-    check("nekonci prazdnym riadkom", not html.endswith("\n</pre>"))
-    check("neznamy jazyk nespadne", "<pre" in code_html("x", "gibberish", "dark"))
-    check("prazdny jazyk nespadne", "<pre" in code_html("x", "", "dark"))
-    check("prazdny kod nespadne", "<pre" in code_html("", "python", "light"))
-    check("styl sa cachuje", _style("light") is _style("light"))
-    print(f"  dlzka HTML pre 2 riadky: {len(html)} znakov")
-
-    print("\n--- styl tabulky ---")
-    doc = QTextDocument()
-    doc.setMarkdown("| Model | tok/s |\n|---|---:|\n| Gemma | 107 |\n", MD_FEATURES)
-    style_tables(doc, "light")
-    table = next(f for f in doc.rootFrame().childFrames() if isinstance(f, QTextTable))
-    fmt = table.format()
-    background = table.cellAt(0, 0).format().background().color()
-    check("ram je nastaveny", fmt.border() == TABLE_BORDER, f"border={fmt.border()}")
-    check("hlavickovy riadok", fmt.headerRowCount() == 1)
-    check("odsadenie buniek", fmt.cellPadding() == TABLE_PADDING)
-    check("hlavicka ma pozadie", background.isValid() and background.alpha() > 0,
-          f"{background.name()} alpha={background.alpha()}")
-    print(f"  tabulka {table.rows()}x{table.columns()}")
-
-    print("\n--- surove HTML sa neinterpretuje ---")
-    doc = QTextDocument()
-    doc.setMarkdown('Text <b>html</b> a <img src="http://x/y.png"> koniec. Porovnanie a<b.',
-                    MD_FEATURES)
-    text = doc.toPlainText()
-    check("text zostal cely", text.endswith("Porovnanie a<b."), repr(text))
-
-    print(f"\nVYSLEDOK: {'vsetko OK' if not failed else f'{failed} chyb'}")
-    sys.exit(1 if failed else 0)

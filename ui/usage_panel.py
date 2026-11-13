@@ -1,3 +1,6 @@
+# --- ./ui/usage_panel.py ---
+
+
 from __future__ import annotations
 from PyQt6.QtCore import QEvent, QTimer
 from PyQt6.QtWidgets import QFrame, QLabel, QVBoxLayout, QWidget
@@ -34,8 +37,10 @@ class UsagePanel(QFrame):
         self.set_usage(Usage(memory_label=monitor.memory_label))
         self.hide()
 
+
     def toggle(self) -> None:
         self.setVisible(not self.isVisible())
+
 
     def setVisible(self, visible: bool) -> None:
         super().setVisible(visible)
@@ -45,6 +50,7 @@ class UsagePanel(QFrame):
         else:
             self._timer.stop()
 
+
     def set_usage(self, usage: Usage) -> None:
         values = ((f"CPU: {_value(usage.cpu)}"),
                   (f"GPU: {_value(usage.gpu)}"),
@@ -52,15 +58,18 @@ class UsagePanel(QFrame):
         for label, text in zip(self._rows, values):
             label.setText(text)
 
+
     def changeEvent(self, event) -> None:
         super().changeEvent(event)
         if event.type() in (QEvent.Type.FontChange, QEvent.Type.StyleChange):
             self._fit()
 
+
     def _fit(self) -> None:
         margins = self.layout().contentsMargins()
         width = self._rows[0].fontMetrics().horizontalAdvance(USAGE_WIDEST)
         self.setFixedWidth(width + margins.left() + margins.right())
+
 
     def _tick(self) -> None:
         self.set_usage(self._monitor.sample())

@@ -2,7 +2,7 @@
     "schema": 1,
     "app_version": "1.0",
     "python": "3.12.10",
-    "releases": "https://github.com/Vejvr0/<RELEASE_REPO>/releases/download",
+    "releases": "https://github.com/Vejvr0/FUKAI/releases/download",
 
     "uv": {
         "version": "0.13.7",

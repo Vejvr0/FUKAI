@@ -1,3 +1,6 @@
+# --- ./ui/settings_store.py ---
+
+
 from __future__ import annotations
 from dataclasses import replace
 from PyQt6.QtCore import QObject, pyqtSignal

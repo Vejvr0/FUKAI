@@ -1,3 +1,6 @@
+# --- ./ui/message_list.py ---
+
+
 from __future__ import annotations
 from html import escape
 from math import ceil
@@ -49,7 +52,6 @@ class _TextView(QTextBrowser):
     
     
     def set_markdown(self, text: str) -> None:
-        """Markdown až po dobehnutí odpovede – počas streamovania ide `set_plain`."""
         self.document().setMarkdown(text, MD_FEATURES)
         self._line_height()
         self._caret = False
@@ -79,7 +81,6 @@ class _TextView(QTextBrowser):
             self.setFixedSize(size)
     
     
-    
     def show_caret(self, color: str) -> None:
         if self._caret:
             return
@@ -89,13 +90,11 @@ class _TextView(QTextBrowser):
         self._caret = True
     
     
-    
     def insert(self, text: str) -> None:
         cursor = self._end()
         if self._caret:
             cursor.movePosition(QTextCursor.MoveOperation.PreviousCharacter)
         cursor.insertText(text, QTextCharFormat())
-    
     
     
     def _end(self) -> QTextCursor:
@@ -116,11 +115,6 @@ class _TextView(QTextBrowser):
 
 
 class _Body(QTextBrowser):
-    """Okno pre kód a tabuľku: bez zalamovania, s vodorovným posuvníkom a stropom výšky.
-
-    Koliesko si necháva, len kým je kam posúvať – inak ho pustí zoznamu správ.
-    """
-    
     def __init__(self, object_name: str, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setObjectName(object_name)
@@ -129,14 +123,14 @@ class _Body(QTextBrowser):
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.setOpenLinks(False)
-        self.viewport().setAutoFillBackground(False)        # pozadie kreslí rámec bloku
+        self.viewport().setAutoFillBackground(False)
         self.document().setDocumentMargin(BOX_MARGIN)
     
     
     def fit(self, width: int, cap: int = CODE_MAX_HEIGHT) -> None:
         self.setFixedWidth(width)
         doc = self.document()
-        doc.setTextWidth(-1)                                # prirodzená šírka, nie šírka okna
+        doc.setTextWidth(-1)
         height = ceil(doc.size().height()) + 2 * self.frameWidth()
         if doc.idealWidth() > width:
             height += self.horizontalScrollBar().sizeHint().height()
@@ -147,9 +141,6 @@ class _Body(QTextBrowser):
     
     
     def reset_view(self) -> None:
-        """Po setHtml/setMarkdown zostane kurzor na konci a pohľad za ním odskočí –
-        pri širokej tabuľke potom vidno posledné stĺpce. Rozsah posuvníka v tej chvíli
-        ešte neexistuje, takže setValue(0) nestačí; treba presunúť kurzor."""
         self.moveCursor(QTextCursor.MoveOperation.Start)
     
     
@@ -283,10 +274,6 @@ def _web_chip() -> QFrame:
 
 
 class _ChipFlow(QWidget):
-    """Čipy nad otázkou („Web“ a prílohy) zarovnané vpravo, zalamujú sa do riadkov (A2).
-    Polohy sa počítajú ručne vo fit(): rad v QHBoxLayout má minimálnu šírku = súčet čipov,
-    v úzkom okne pretiekol aj s bublinou a držal široký celý stĺpec správ."""
-
     def __init__(self, chips: list[QWidget], parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._items = chips
@@ -302,7 +289,7 @@ class _ChipFlow(QWidget):
         rows: list[list[tuple[QWidget, int]]] = [[]]
         used = 0
         for chip in self._items:
-            chip.ensurePolished()               # písmo zo stylesheetu príde až pri polish (§8.2)
+            chip.ensurePolished()
             w = min(chip.sizeHint().width(), width)
             if rows[-1] and used + MSG_CHIP_SPACING + w > width:
                 rows.append([])
@@ -369,9 +356,6 @@ class _UserMessage(QWidget):
 
 
 class _AnswerMessage(QWidget):
-    """Počas streamovania jeden `_TextView` s obyčajným textom, po dobehnutí zoznam
-    častí: markdown, bloky kódu a tabuľky (§8 krok 9, kúsok 6b)."""
-
     def __init__(self, avatar: QIcon, theme: str = "light", parent: QWidget | None = None) -> None:
         super().__init__(parent)
         face = QLabel()
@@ -520,6 +504,7 @@ class _AnswerMessage(QWidget):
 class MessageList(QScrollArea):
     preview_requested = pyqtSignal(int)
 
+
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setObjectName("messageList")
@@ -530,9 +515,6 @@ class MessageList(QScrollArea):
         
         self._column = QWidget()
         self._column.setMaximumWidth(COMPOSER_MAX_WIDTH)
-        # Šírku stĺpca určuje okno, nie deti (A2). fit() im dáva pevnú šírku podľa stĺpca, takže
-        # s politikou Preferred by najširšie dieťa bolo minimom stĺpca - pri zúžení okna by sa
-        # stĺpec nezmenšil, nepríde Resize a deti by sa nikdy neprepočítali.
         self._column.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         self._column.installEventFilter(self)
         self._items = QVBoxLayout(self._column)
@@ -661,8 +643,7 @@ class MessageList(QScrollArea):
     def _on_value_changed(self, value: int) -> None:
         maximum = self.verticalScrollBar().maximum()
         if maximum <= 0:
-            return          # obsah sa zmestí do okna – pri prestavbe správy sa rozsah
-                            # nakrátko zmenší na nulu a "som dole" sa nesmie prepnúť
+            return
         self._stick = value >= maximum - STICK_MARGIN
     
     

@@ -1,3 +1,6 @@
+# --- ./storage/constants.py ---
+
+
 SCHEMA_VERSION = 2
 PRAGMAS = (
     "PRAGMA foreign_keys = ON",

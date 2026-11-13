@@ -1,3 +1,6 @@
+# --- ./ui/properties_view.py ---
+
+
 from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass, replace
@@ -335,7 +338,7 @@ class _SeedRow(QWidget):
             try:
                 self.set_value(max(SEED_MIN, min(SEED_MAX, int(text))))
             except ValueError:
-                self.set_value(self._value)        # nečíslo - vrátime poslednú platnú hodnotu
+                self.set_value(self._value)
                 return
         self.changed.emit(self.param.key, self._value)
 
@@ -457,7 +460,7 @@ class _Ticks(QWidget):
             label.setProperty("on", position == index)
             label.style().unpolish(label)
             label.style().polish(label)
-            label.adjustSize()      # tučný popis je širší, inak by sedel mimo stredu
+            label.adjustSize()
         self._place()
 
 
@@ -754,8 +757,7 @@ class PropertiesView(QWidget):
 
         return self._card([
             self._head("Systémový prompt", "system_prompt", self._prompt_hint),
-            _desc_label("Úvodný pokyn, ktorý model dostane pred každou konverzáciou. Určuje jeho rolu, "
-                       "tón a jazyk odpovedí."),
+            _desc_label("Úvodný pokyn, ktorý model dostane pred každou konverzáciou. Určuje jeho rolu, tón a jazyk odpovedí."),
             self._prompt,
             presets,
         ])
@@ -797,8 +799,7 @@ class PropertiesView(QWidget):
 
         return self._card([
             self._head("Max. kontext", "n_ctx", self._ctx_tag, self._ctx_num),
-            _desc_label("Koľko textu si model pamätá naraz: systémový prompt, história chatu, prílohy aj "
-                       "samotná odpoveď. Viac kontextu zaberie viac pamäte a model sa načíta pomalšie."),
+            _desc_label("Koľko textu si model pamätá naraz: systémový prompt, história chatu, prílohy aj samotná odpoveď. Viac kontextu zaberie viac pamäte a model sa načíta pomalšie."),
             self._ctx_slider,
             self._ticks,
             self._memory,
@@ -934,11 +935,9 @@ class PropertiesView(QWidget):
             self._memory.setText(text)
 
         if self._clamped_ctx:
-            self._set_note(f"Model zvládne najviac {int_text(self._steps[-1])} tokenov, "
-                           f"uložená hodnota bola vyššia a zmenšila sa.")
+            self._set_note(f"Model zvládne najviac {int_text(self._steps[-1])} tokenov, uložená hodnota bola vyššia a zmenšila sa.")
         elif need_mb is not None and self._free_mb and need_mb > self._free_mb:
-            self._set_note(f"Model s týmto kontextom potrebuje viac {self._pool}, než je voľnej. "
-                           f"Načítanie môže zlyhať alebo byť veľmi pomalé.")
+            self._set_note(f"Model s týmto kontextom potrebuje viac {self._pool}, než je voľnej. Načítanie môže zlyhať alebo byť veľmi pomalé.")
         elif n_ctx >= BIG_CONTEXT:
             self._set_note("Veľký kontext potrebuje veľa pamäte a model sa bude načítavať dlhšie.")
         else:
@@ -1017,7 +1016,7 @@ class PropertiesView(QWidget):
         param = row.param
         value = getattr(self._props.load if param.group == "load" else self._props.sampling, key)
         if key == "n_threads" and value is None:
-            value = self._hardware.n_threads      # None = nech rozhodne llama.cpp, ukazujeme odhad
+            value = self._hardware.n_threads
         if param.special != "seed":
             maximum = self._maximum(param)
             row.set_range(maximum)

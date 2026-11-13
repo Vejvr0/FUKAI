@@ -1,3 +1,6 @@
+# --- ./extensions/web_search.py ---
+
+
 from __future__ import annotations
 import threading
 import time
@@ -151,75 +154,3 @@ def _choose(hits: list[SearchHit], texts: list[str | None], pages: int) -> list[
 
 def _pages_word(count: int) -> str:
     return "stránku" if count == 1 else "stránky" if count < 5 else "stránok"
-    
-
-if __name__ == "__main__":
-    import sys
-    import time
-    sys.stdout.reconfigure(encoding="utf-8")
-    log: list[str] = []
-    def ok(label: str, cond: bool) -> None:
-        log.append(f"  {'OK ' if cond else 'ZLE'} {label}")
-
-    print("--- offline ---")
-    hits = [SearchHit(f"T{i}", f"https://x/{i}", f"úryvok {i}") for i in range(5)]
-    picked = _choose(hits, [None, "text 1", None, "text 3", "text 4"], 3)
-    ok("stránky s textom majú prednosť, poradie vyhľadávača, čísla od 1",
-       [(s.n, s.url[-1], s.full) for s in picked] == [(1, "1", True), (2, "3", True), (3, "4", True)])
-    picked = _choose(hits, [None, "text 1", None, None, None], 3)
-    ok("málo textov → doplnia sa úryvky v poradí",
-       [(s.url[-1], s.full) for s in picked] == [("0", False), ("1", True), ("2", False)])
-    picked = _choose(hits[:2], [None, None], 3)
-    ok("menej výsledkov než stránok → toľko, koľko je", [s.text for s in picked] == ["úryvok 0", "úryvok 1"])
-    ok("bez textu aj úryvku sa zdroj vynechá",
-       _choose([SearchHit("a", "https://a", ""), SearchHit("b", "https://b", "u")], [None, None], 3)[0].url == "https://b")
-    long = "Prvá veta. " * 400 + "\n\n" + "x" * 3000
-    cut = cut_text(long, 2000)
-    ok(f"cut_text skráti na hranici vety ({len(cut)} ≤ 2000, končí bodkou)", len(cut) <= 2000 and cut.endswith("."))
-    ok("cut_text krátky text nechá", cut_text("ahoj", 10) == "ahoj")
-    ok("cut_text bez hraníc → …", cut_text("y" * 50, 10) == "y" * 10 + "…")
-    stop = threading.Event(); stop.set()
-    ok("zrušené pred sťahovaním → []", gather("q", cancel=stop, searcher=lambda q: hits, fetcher=lambda *a, **k: "t") == [])
-    def slow(url, cancel=None):
-        time.sleep(0.05 if url.endswith(("0", "1")) else 10)
-        return "obsah " * 100
-    start = time.monotonic()
-    picked = gather("q", searcher=lambda q: hits, fetcher=slow)
-    took = time.monotonic() - start
-    ok(f"pomalé stránky sa nečakajú: {took:.1f} s ≤ {WEB_FETCH_DEADLINE_S + 0.5} s, 2 texty + 1 úryvok",
-       took <= WEB_FETCH_DEADLINE_S + 0.5 and [s.full for s in picked] == [True, True, False])
-    def fast(url, cancel=None):
-        return "obsah " * 100
-    start = time.monotonic()
-    gather("q", searcher=lambda q: hits, fetcher=fast)
-    ok(f"rýchle stránky → bez čakania na termín ({time.monotonic() - start:.2f} s)", time.monotonic() - start < 1)
-    def boom(q): raise WebSearchError("test")
-    try:
-        gather("q", searcher=boom); ok("chyba vyhľadávača prejde von ako WebSearchError", False)
-    except WebSearchError:
-        ok("chyba vyhľadávača prejde von ako WebSearchError", True)
-    ok("fetch_text na neexistujúcu doménu → None, bez výnimky",
-       fetch_text("https://neexistuje.invalid/", timeout=3) is None)
-    print("\n".join(log))
-    failed = any("ZLE" in line for line in log)
-    log.clear()
-
-    query = " ".join(sys.argv[1:]) or "Žilinská univerzita fakulta elektrotechniky"
-    print(f"\n--- živý test: {query!r} ---")
-    steps: list[str] = []
-    start = time.monotonic()
-    try:
-        sources = gather(query, progress=steps.append)
-    except WebSearchError as exc:
-        print(f"  WebSearchError: {exc.message} | {exc.detail}")
-    else:
-        print(f"  {time.monotonic() - start:.1f} s, priebeh: {steps}")
-        for s in sources:
-            print(f"  [{s.n}] {'text ' if s.full else 'úryvok'} {len(s.text):5} zn. | {s.title[:50]} | {s.url[:60]}")
-        ok("aspoň jeden zdroj", bool(sources))
-        ok("čísla 1..n", [s.n for s in sources] == list(range(1, len(sources) + 1)))
-        ok("aspoň jeden zdroj s textom stránky", any(s.full for s in sources))
-        ok(f"žiadny zdroj nad {WEB_SOURCE_CHARS} znakov", all(len(s.text) <= WEB_SOURCE_CHARS + 1 for s in sources))
-        print("\n".join(log))
-    failed = failed or any("ZLE" in line for line in log)
-    print("exit", 1 if failed else 0)

@@ -1,3 +1,6 @@
+# --- ./ui/constants.py ---
+
+
 from pathlib import Path
 
 ASSETS_DIR = Path(__file__).resolve().parent.parent / "assets"
@@ -128,12 +131,9 @@ PROMPT_BOX_HEIGHT = 104
 PRESET_HEIGHT = 28
 PROMPT_EMPTY_HINT = "prázdny · model použije svoj predvolený"
 PROMPT_PRESETS = {
-    "Všeobecný asistent": "Si FUKAI, nápomocný AI asistent. Odpovedaj po slovensky, vecne a zrozumiteľne. "
-                          "Ak si niečím nie si istý, povedz to.",
-    "Tútor pre študentov": "Si trpezlivý vysokoškolský tútor. Vysvetľuj postupne, s príkladmi, a na konci over "
-                           "porozumenie krátkou otázkou. Odpovedaj po slovensky.",
-    "Programátor": "Si skúsený programátor. Odpovedaj stručne, kód píš v blokoch s označením jazyka a vysvetli "
-                   "len to podstatné.",
+    "Všeobecný asistent": "Si FUKAI, nápomocný AI asistent. Odpovedaj po slovensky, vecne a zrozumiteľne. Ak si niečím nie si istý, povedz to.",
+    "Tútor pre študentov": "Si trpezlivý vysokoškolský tútor. Vysvetľuj postupne, s príkladmi, a na konci over porozumenie krátkou otázkou. Odpovedaj po slovensky.",
+    "Programátor": "Si skúsený programátor. Odpovedaj stručne, kód píš v blokoch s označením jazyka a vysvetli len to podstatné.",
     "Stručné odpovede": "Odpovedaj čo najstručnejšie, najviac v 2-3 vetách, po slovensky.",
 }
 CHIP_HEIGHT = 26
@@ -157,7 +157,7 @@ WEB_CHIP_TOOLTIP = "Pri tejto otázke bolo zapnuté hľadanie na webe"
 WEB_SOURCES_LABEL = "Zdroje"
 WEB_BUTTON_OFF = "Hľadanie na webe – vypnuté"
 WEB_BUTTON_ON = "Hľadanie na webe – zapnuté v tomto chate"
-STATUS_SOURCES = "Spracúvam zdroje…"         # dlhý prompt pred prvým tokenom (B3)
+STATUS_SOURCES = "Spracúvam zdroje…"
 STATUS_ATTACHMENTS = "Spracúvam prílohy…"
 UNCAUGHT_MESSAGE = "Nastala neočakávaná chyba."
 UNCAUGHT_HINT = "FUKAI beží ďalej. Ak sa niečo správa čudne, reštartuj ho."
