@@ -21,7 +21,7 @@ requests==2.32.5
 trafilatura==2.0.0
 
 # --- Engine llama-cpp-python ---
-# Engine sa nachádza v /dist/backend_whld, pre daný HW 3 rôzné wheels:
+# Engine sa nachádza v /dist/backend_whls, pre daný HW 3 rôzné wheels:
 # ∙ llama_cpp_python-0.3.36-py3-none-win_amd64.whl          | Windows CPU
 # ∙ llama_cpp_python-0.3.36-py3-none-win_amd64.whl          | Windows NVIDIA GPU (CUDA)
 # ∙ llama_cpp_python-0.3.36-py3-none-macosx_14_0_arm64.whl  | MacOS Apple Metal

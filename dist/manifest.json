@@ -19,6 +19,7 @@
     "minimum": {
         "macos_version": "14.0",
         "macos_arch": "arm64",
+        "windows_build": 19041,
         "windows_cpu": ["AVX2", "FMA", "F16C"],
         "cuda_compute_capability": "7.5",
         "cuda_driver": "580.00"
