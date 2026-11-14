@@ -10,3 +10,8 @@ __pycache__/
 /dist/tools/
 /dist/out/
 /.vscode/
+/archiv/
+ALMANAC.md
+APPTEST.md
+CLAUDE.md
+SESSIONS.md

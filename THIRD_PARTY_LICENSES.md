@@ -59,4 +59,5 @@ FUKAI používa nasledujúce knižnice. Všetky sú s GPL v3 kompatibilné. Inš
 | Qt 6 | LGPL-3.0-only | súčasť `pyqt6-qt6` |
 | llama.cpp / ggml | MIT | súčasť `llama-cpp-python`; Metal wheel postavený zo zdrojákov 0.3.36 |
 | uv 0.13.7 (Astral) | MIT OR Apache-2.0 | pribalený v inštalačke, zostavuje prostredie |
+| Microsoft Visual C++ runtime (`msvcp140.dll`, `vcomp140.dll`) | Microsoft Software License Terms – Visual Studio, „Distributable Code“ | **len Windows**; pribalené k aplikácii (app-local), lebo inštalácia nepotrebuje práva správcu a Visual C++ Redistributable by ich vyžadoval. `vcruntime140.dll` dodáva Python. |
 | NVIDIA cuBLAS a CUDA runtime (`nvidia-cublas`, `nvidia-cuda-runtime`) | NVIDIA Software License (proprietárna) | **len Windows s kartou NVIDIA**; FUKAI ich nešíri – inštalačka ich stiahne z PyPI priamo do počítača používateľa |
